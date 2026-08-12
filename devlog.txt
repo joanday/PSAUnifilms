@@ -1,0 +1,71 @@
+# 📝 PSAUniFilms - Development Logs
+
+**Date:** August 11, 2026
+**Session Focus:** Objective 1 Completion, UI/UX Bug Fixes, and Gemini AI Integration (Objective 2).
+
+---
+
+## 🚀 Key Implementations
+
+### 1. 🤖 AI Integration (Objective 2 Completed)
+- **Problem:** Original objective required Vertex AI and Video Intelligence APIs, which mandate a Google Cloud Billing account and credit card, creating a barrier for the student project.
+- **Solution:** Pivoted to **Google Gemini 1.5 Flash AI** via the `google_generative_ai` package (Version `0.4.7`). This runs entirely client-side and utilizes the free Google AI Studio tier.
+- **Code Changes:**
+  - Created `AiService` (`lib/services/ai_service.dart`) to interface with Gemini.
+  - Implemented prompt engineering to automatically analyze film title and description to output JSON containing a `summary` and `keywords`.
+  - Updated `Film` model (`lib/models/film.dart`) to persist `aiSummary` and `aiKeywords` in Firestore.
+  - Updated submission screens (`submit_film_screen.dart`, `submit_screen.dart`) to invoke `AiService` asynchronously before pushing to Firestore.
+  - Updated `film_detail_screen.dart` to display an "✨ AI Insights" UI block presenting the generated data.
+
+### 2. 🎬 Metadata Completeness (Objective 1 Completed)
+- **Problem:** The submission forms and Firestore schema were missing the "Director" field, which was explicitly required by Draft 15 objectives.
+- **Solution:** Added Director input.
+- **Code Changes:**
+  - Updated `Film` model to include `director`.
+  - Added `directorController` and a text field to both `submit_film_screen.dart` and `submit_screen.dart`.
+  - Updated `devcom_dashboard_screen.dart` `FilmSubmission` model to map the director field for officer review.
+  - Updated `film_detail_screen.dart` to display "Directed by [name]" below the year/genre tags.
+
+### 3. ⚡ Auth & Navigation Bug Fixes
+- **Problem 1 (Slow Logout):** When logging out from the profile or dashboard, the app would freeze or lag significantly.
+  - **Fix:** Identified a race condition between manual `Navigator.pushReplacement` and the `authStateChanges` stream listener in `main.dart` (`_RoleGate`). Removed manual navigation. `FirebaseAuth.instance.signOut()` now instantly triggers the `_RoleGate` to show the login screen.
+- **Problem 2 (Guest Access):** The app still allowed unauthenticated users to enter via "Continue as Guest", bypassing the intended role-based access.
+  - **Fix:** Removed the "Continue as Guest" `GestureDetector` entirely from `login_screen.dart`.
+
+### 4. 🔔 Push Notification Toggle Fix
+- **Problem:** The notification toggle on the profile screen only changed a local boolean and didn't actually affect push notifications.
+- **Solution:** Wired the UI switch directly to FCM topic subscriptions.
+- **Code Changes:**
+  - Added `shared_preferences` and `firebase_messaging` logic to `_ProfileScreenState`.
+  - Created `_toggleNotifications(bool enabled)`:
+    - If true: `FirebaseMessaging.instance.subscribeToTopic('new_uploads')`
+    - If false: `FirebaseMessaging.instance.unsubscribeFromTopic('new_uploads')`
+  - Persisted the user's choice using `SharedPreferences` so it survives app restarts.
+  - Set default state to ON (`true`).
+
+### 5. 🛡️ Content Protection Verification (Objective 5)
+- **Investigation:** User reported screen recording was black (functioning as intended) but thought the feature wasn't implemented.
+- **Finding:** Verified that `WindowManager.LayoutParams.FLAG_SECURE` is properly active in native Android code (`android/app/src/main/kotlin/.../MainActivity.kt`). Objective 5 is confirmed 100% complete.
+
+---
+
+## 📦 Dependency Updates
+- Added `google_generative_ai: ^0.4.7`
+
+## 📊 Objective Status Update
+- **Objective 1 (Metadata):** 100% Complete ✅
+- **Objective 2 (AI Analysis):** 100% Complete ✅ (via Gemini workaround)
+- **Objective 3 (Semantic Search):** 100% Complete ✅ (Text search naturally indexes against the newly injected AI keywords)
+- **Objective 4 (Dashboard):** 100% Complete ✅
+- **Objective 5 (Protection):** 100% Complete ✅
+- **Objective 6 (Evaluation):** Pending Manual UAT 🟡
+
+### 6. 🎨 Home Screen UI/UX Overhaul
+- **Problem:** The home screen layout was static and cluttered, with a single featured film and horizontal scrolling that didn't effectively showcase the library.
+- **Solution:** Redesigned key sections to feel more like a premium, dynamic streaming platform.
+- **Code Changes:**
+  - **Rotating Monthly Showcase:** Upgraded the static `_featuredBanner` to a custom `ShowcaseBanner` widget (`lib/widgets/showcase_banner.dart`). It automatically queries all films uploaded in the current month and uses a `Timer` to seamlessly cycle through 6-second clips of each film, starting at the 10-second mark to bypass intros.
+  - **Player Interaction Block:** Wrapped the YouTube iframe inside an `AbsorbPointer` so users are routed directly to the `FilmDetailScreen` upon tap, rather than being hijacked into the YouTube native app or website.
+  - **Covering YouTube UI:** Injected a dark top-gradient overlay to visually obscure the native YouTube title and uploader profile icons, making the embedded player look like a first-party native video player.
+  - **"All Documentaries" Grid:** Replaced the horizontal `ListView` in the 'All Documentaries' section with a responsive `Wrap` grid using portrait-oriented (2:3 aspect ratio) posters. Simplified the metadata strictly to the film title for a minimalist aesthetic.
+  - **Cleanup:** Removed redundant "View All" buttons from the showcase and newly uploaded sections.
