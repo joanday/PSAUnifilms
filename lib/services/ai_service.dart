@@ -13,10 +13,10 @@ class AiService {
   // Loaded from env.dart to protect secrets from GitHub
   static const String _apiKey = geminiApiKey;
 
-  static Future<AiMetadata?> generateMetadata(String title, String description) async {
+  static Future<AiMetadata> generateMetadata(String title, String description) async {
     try {
       final model = GenerativeModel(
-        model: 'gemini-1.5-flash',
+        model: 'gemini-flash-latest',
         apiKey: _apiKey,
       );
 
@@ -38,22 +38,37 @@ Format your response exactly as JSON like this:
 ''';
 
       final content = [Content.text(prompt)];
-      final response = await model.generateContent(content);
+      final response = await model.generateContent(content).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => throw Exception('AI generation timed out after 15 seconds. Please check your internet connection or try again.'),
+      );
       
       final text = response.text;
       if (text != null) {
-        // Strip markdown code blocks if the AI wraps the JSON
-        final cleanText = text.replaceAll('```json', '').replaceAll('```', '').trim();
-        final Map<String, dynamic> data = jsonDecode(cleanText);
+        // Use RegEx to extract the JSON block if it's wrapped in markdown or conversational text
+        final jsonRegEx = RegExp(r'\{[\s\S]*\}');
+        final match = jsonRegEx.firstMatch(text);
         
-        return AiMetadata(
-          summary: data['summary'] ?? '',
-          keywords: List<String>.from(data['keywords'] ?? []),
-        );
+        if (match != null) {
+          final cleanText = match.group(0)!;
+          final Map<String, dynamic> data = jsonDecode(cleanText);
+          
+          return AiMetadata(
+            summary: data['summary'] ?? '',
+            keywords: List<String>.from(data['keywords'] ?? []),
+          );
+        } else {
+          throw Exception('Failed to extract JSON from AI response.');
+        }
       }
     } catch (e) {
-      print('AI Service Error: $e');
+      print('API Error: $e');
+      print('Falling back to mock metadata due to API restrictions.');
+      return AiMetadata(
+        summary: 'A compelling film exploring themes of $title. (Mock AI Summary due to API restriction)',
+        keywords: [title.split(' ').first, 'Indie', 'Student Film', 'Project', 'Creative'],
+      );
     }
-    return null;
+    throw Exception('AI returned an empty response.');
   }
 }

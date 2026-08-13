@@ -1,5 +1,6 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 final FlutterLocalNotificationsPlugin _localNotifications =
     FlutterLocalNotificationsPlugin();
@@ -22,9 +23,15 @@ class NotificationService {
 
     // Subscribe every user to the "new_uploads" topic
     await FirebaseMessaging.instance.subscribeToTopic('new_uploads');
+    
+    // Subscribe user to personal topic for direct notifications
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      await FirebaseMessaging.instance.subscribeToTopic('user_${user.uid}');
+    }
 
     // Set up local notifications (for foreground display)
-    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidInit = AndroidInitializationSettings('@drawable/ic_notification');
     const initSettings = InitializationSettings(android: androidInit);
     await _localNotifications.initialize(initSettings);
 
@@ -48,6 +55,7 @@ class NotificationService {
               channelDescription: _channel.description,
               importance: Importance.high,
               priority: Priority.high,
+              icon: '@drawable/ic_notification',
             ),
           ),
         );

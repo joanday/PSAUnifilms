@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import '../services/ai_service.dart';
@@ -18,6 +19,8 @@ class _SubmitScreenState extends State<SubmitScreen> {
   final _youtubeLinkController = TextEditingController();
   bool _isLoading = false;
   String _loadingText = '';
+  int _loadingPercentage = 0;
+  Timer? _progressTimer;
   String? _previewId;
 
   String? _selectedGenre;
@@ -93,18 +96,29 @@ class _SubmitScreenState extends State<SubmitScreen> {
     setState(() {
       _isLoading = true;
       _loadingText = 'Generating AI Metadata...';
+      _loadingPercentage = 0;
     });
 
-    final aiData = await AiService.generateMetadata(
-      title,
-      desc,
-    );
-
-    setState(() {
-      _loadingText = 'Submitting to database...';
+    _progressTimer = Timer.periodic(const Duration(milliseconds: 150), (timer) {
+      if (mounted && _loadingPercentage < 95) {
+        setState(() {
+          _loadingPercentage++;
+        });
+      }
     });
 
     try {
+      final aiData = await AiService.generateMetadata(
+        title,
+        desc,
+      );
+
+      _progressTimer?.cancel();
+      setState(() {
+        _loadingPercentage = 100;
+        _loadingText = 'Submitting to database...';
+      });
+
       await FirebaseFirestore.instance.collection('films').add({
         'title': title,
         'director': director,
@@ -117,8 +131,8 @@ class _SubmitScreenState extends State<SubmitScreen> {
         'uploaderName': FirebaseAuth.instance.currentUser?.email?.split('@')[0],
         'status': 'pending',
         'createdAt': FieldValue.serverTimestamp(),
-        'aiSummary': aiData?.summary ?? '',
-        'aiKeywords': aiData?.keywords ?? [],
+        'aiSummary': aiData.summary,
+        'aiKeywords': aiData.keywords,
       });
 
       if (mounted) {
@@ -133,10 +147,14 @@ class _SubmitScreenState extends State<SubmitScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error submitting film: $e')),
+          SnackBar(
+            content: Text('Submission failed: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
+      _progressTimer?.cancel();
       if (mounted) setState(() => _isLoading = false);
     }
   }
@@ -358,7 +376,7 @@ class _SubmitScreenState extends State<SubmitScreen> {
                         ),
                       )
                     : const Icon(Icons.upload),
-                label: Text(_isLoading ? _loadingText : 'Submit Film'),
+                label: Text(_isLoading ? '$_loadingText $_loadingPercentage%' : 'Submit Film'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF2E7D52),
                   disabledBackgroundColor:

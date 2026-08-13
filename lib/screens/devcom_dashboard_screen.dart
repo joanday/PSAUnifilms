@@ -14,6 +14,7 @@ class FilmSubmission {
   final String title;
   final String director;
   final String studentName;
+  final String uploaderId;
   final String theme;
   final int year;
   SubmissionStatus status;
@@ -26,6 +27,7 @@ class FilmSubmission {
     required this.title,
     this.director = '',
     required this.studentName,
+    required this.uploaderId,
     required this.theme,
     required this.year,
     required this.status,
@@ -75,7 +77,8 @@ class _DevcomDashboardScreenState extends State<DevcomDashboardScreen> {
               id: doc.id,
               title: data['title'] ?? 'Untitled',
               director: data['director'] ?? '',
-              studentName: data['uploadedBy'] ?? 'Unknown',
+              studentName: data['uploaderName'] ?? 'Unknown',
+              uploaderId: data['uploadedBy'] ?? '',
               theme: data['genre'] ?? 'General',
               year: (data['createdAt'] as Timestamp?)?.toDate().year ??
                   DateTime.now().year,
@@ -97,7 +100,7 @@ class _DevcomDashboardScreenState extends State<DevcomDashboardScreen> {
   // doing nothing. This is almost certainly why "Approve" looked like it
   // wasn't working — the write was failing and you never knew.
   Future<void> _updateStatus(
-      String id, SubmissionStatus newStatus, String note) async {
+      String id, SubmissionStatus newStatus, String note, String title, String uploaderId) async {
     final statusStr = switch (newStatus) {
       SubmissionStatus.approved => 'approved',
       SubmissionStatus.returned => 'returned',
@@ -114,9 +117,12 @@ class _DevcomDashboardScreenState extends State<DevcomDashboardScreen> {
         'note': note,
       });
 
+      // 5. Send push notification if returning or approving
       if (newStatus == SubmissionStatus.approved) {
         // Trigger notification directly from the client without Blaze!
         sendApprovalNotification(title);
+      } else if (newStatus == SubmissionStatus.returned) {
+        sendReturnNotification(uploaderId, title, note);
       }
 
       if (!mounted) return;
@@ -188,13 +194,15 @@ class _DevcomDashboardScreenState extends State<DevcomDashboardScreen> {
         final screens = [
           _DashboardTab(
             submissions: submissions,
-            onUpdateStatus: _updateStatus,
+            onUpdateStatus: (id, status, note) => _updateStatus(
+                id, status, note, submissions.firstWhere((s) => s.id == id).title, submissions.firstWhere((s) => s.id == id).uploaderId),
             onNavigateToSubmissions: () => setState(() => _selectedTab = 1),
             onNavigateToUsers: () => setState(() => _selectedTab = 2),
           ),
           _SubmissionsTab(
             submissions: submissions,
-            onUpdateStatus: _updateStatus,
+            onUpdateStatus: (id, status, note) => _updateStatus(
+                id, status, note, submissions.firstWhere((s) => s.id == id).title, submissions.firstWhere((s) => s.id == id).uploaderId),
           ),
           const ManageUsersScreen(),
         ];

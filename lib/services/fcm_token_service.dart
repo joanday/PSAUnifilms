@@ -60,3 +60,40 @@ Future<bool> sendApprovalNotification(String filmTitle) async {
     return false;
   }
 }
+
+Future<bool> sendReturnNotification(String uploaderId, String filmTitle, String note) async {
+  try {
+    final token = await getAccessToken();
+    final url = Uri.parse('https://fcm.googleapis.com/v1/projects/my-flutter-app-e482c/messages:send');
+
+    final payload = {
+      'message': {
+        'topic': 'user_$uploaderId',
+        'notification': {
+          'title': 'Documentary Returned 🔙',
+          'body': 'Your submission "$filmTitle" has been returned. Note: $note',
+        }
+      }
+    };
+
+    final response = await http.post(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode(payload),
+    );
+
+    if (response.statusCode == 200) {
+      print('✅ Return notification sent successfully');
+      return true;
+    } else {
+      print('❌ Failed to send return notification: ${response.body}');
+      return false;
+    }
+  } catch (e) {
+    print('❌ Error sending return notification: $e');
+    return false;
+  }
+}

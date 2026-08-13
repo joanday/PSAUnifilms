@@ -2,10 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../models/film.dart';
 import '../theme/app_theme.dart';
 import 'login_screen.dart';
 import 'account_settings_screen.dart';
 import 'change_password_screen.dart';
+import 'film_detail_screen.dart';
+import 'my_submissions_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -16,11 +21,25 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _notificationsEnabled = true;
+  String? _userRole;
 
   @override
   void initState() {
     super.initState();
     _loadNotificationPref();
+    _loadUserRole();
+  }
+
+  Future<void> _loadUserRole() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      if (mounted) {
+        setState(() {
+          _userRole = doc.data()?['role'] as String?;
+        });
+      }
+    }
   }
 
   Future<void> _loadNotificationPref() async {
@@ -36,10 +55,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('notifications_enabled', enabled);
 
+    final user = FirebaseAuth.instance.currentUser;
+
     if (enabled) {
       await FirebaseMessaging.instance.subscribeToTopic('new_uploads');
+      if (user != null) {
+        await FirebaseMessaging.instance.subscribeToTopic('user_${user.uid}');
+      }
     } else {
       await FirebaseMessaging.instance.unsubscribeFromTopic('new_uploads');
+      if (user != null) {
+        await FirebaseMessaging.instance.unsubscribeFromTopic('user_${user.uid}');
+      }
     }
   }
 
@@ -234,7 +261,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const SizedBox(height: 16),
             ]),
           ),
-
           // ── Account ──────────────────────────────────────────────────────
           _sectionLabel('Account'),
           _settingsCard([
@@ -250,6 +276,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   MaterialPageRoute(
                       builder: (_) => const ChangePasswordScreen()));
             }),
+            if (_userRole == 'CAS Student' || _userRole == 'cas_student')
+              _tile(Icons.video_library_outlined, 'My Submissions', onTap: () {
+                Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const MySubmissionsScreen()));
+              }),
           ]),
 
           const SizedBox(height: 16),
@@ -357,3 +390,4 @@ class _ProfileScreenState extends State<ProfileScreen> {
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
       );
 }
+

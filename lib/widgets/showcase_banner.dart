@@ -76,6 +76,7 @@ class _ShowcaseBannerState extends State<ShowcaseBanner> {
     if (oldWidget.films != widget.films) {
       _timer?.cancel();
       _controller?.dispose();
+      _controller = null; // Prevent using disposed controller
       _currentIndex = 0;
       if (widget.films.isNotEmpty) {
         _initController();
@@ -87,6 +88,7 @@ class _ShowcaseBannerState extends State<ShowcaseBanner> {
   void dispose() {
     _timer?.cancel();
     _controller?.dispose();
+    _controller = null;
     super.dispose();
   }
 

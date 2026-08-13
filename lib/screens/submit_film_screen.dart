@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:async';
 import '../services/fcm_token_service.dart';
 import '../services/ai_service.dart';
 
@@ -18,6 +19,8 @@ class _SubmitFilmScreenState extends State<SubmitFilmScreen> {
   final urlController = TextEditingController();
   bool isLoading = false;
   String loadingText = '';
+  int loadingPercentage = 0;
+  Timer? _progressTimer;
   String? errorMessage;
 
   String? _selectedGenre;
@@ -70,7 +73,16 @@ class _SubmitFilmScreenState extends State<SubmitFilmScreen> {
     setState(() {
       isLoading = true;
       loadingText = 'Generating AI Metadata...';
+      loadingPercentage = 0;
       errorMessage = null;
+    });
+
+    _progressTimer = Timer.periodic(const Duration(milliseconds: 150), (timer) {
+      if (mounted && loadingPercentage < 95) {
+        setState(() {
+          loadingPercentage++;
+        });
+      }
     });
 
     try {
@@ -79,7 +91,9 @@ class _SubmitFilmScreenState extends State<SubmitFilmScreen> {
         descController.text.trim(),
       );
 
+      _progressTimer?.cancel();
       setState(() {
+        loadingPercentage = 100;
         loadingText = 'Submitting to database...';
       });
 
@@ -98,8 +112,8 @@ class _SubmitFilmScreenState extends State<SubmitFilmScreen> {
         'uploaderName': FirebaseAuth.instance.currentUser?.email?.split('@')[0],
         'status': 'pending',
         'createdAt': FieldValue.serverTimestamp(),
-        'aiSummary': aiData?.summary ?? '',
-        'aiKeywords': aiData?.keywords ?? [],
+        'aiSummary': aiData.summary,
+        'aiKeywords': aiData.keywords,
       });
 
       if (mounted) {
@@ -116,6 +130,7 @@ class _SubmitFilmScreenState extends State<SubmitFilmScreen> {
         setState(() => errorMessage = 'Submission failed: $e');
       }
     } finally {
+      _progressTimer?.cancel();
       if (mounted) setState(() => isLoading = false);
     }
   }
@@ -350,7 +365,7 @@ class _SubmitFilmScreenState extends State<SubmitFilmScreen> {
                       )
                     : const Icon(Icons.upload_rounded, color: Colors.white),
                 label: Text(
-                  isLoading ? loadingText : 'Submit Film',
+                  isLoading ? '$loadingText $loadingPercentage%' : 'Submit Film',
                   style: const TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,

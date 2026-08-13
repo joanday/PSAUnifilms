@@ -37,10 +37,12 @@ class _SearchScreenState extends State<SearchScreen> {
 
   List<Film> _results(List<Film> films) {
     return films.where((film) {
+      final q = _query.toLowerCase();
       final matchesQuery = _query.isEmpty ||
-          film.title.toLowerCase().contains(_query.toLowerCase()) ||
-          film.genre.toLowerCase().contains(_query.toLowerCase()) ||
-          film.description.toLowerCase().contains(_query.toLowerCase());
+          film.title.toLowerCase().contains(q) ||
+          film.genre.toLowerCase().contains(q) ||
+          film.description.toLowerCase().contains(q) ||
+          film.aiKeywords.any((k) => k.toLowerCase().contains(q));
       final matchesGenre =
           _selectedGenre == 'All' || film.genre == _selectedGenre;
       return matchesQuery && matchesGenre;

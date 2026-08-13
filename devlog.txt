@@ -69,3 +69,36 @@
   - **Covering YouTube UI:** Injected a dark top-gradient overlay to visually obscure the native YouTube title and uploader profile icons, making the embedded player look like a first-party native video player.
   - **"All Documentaries" Grid:** Replaced the horizontal `ListView` in the 'All Documentaries' section with a responsive `Wrap` grid using portrait-oriented (2:3 aspect ratio) posters. Simplified the metadata strictly to the film title for a minimalist aesthetic.
   - **Cleanup:** Removed redundant "View All" buttons from the showcase and newly uploaded sections.
+
+### 7. ?? Showcase Banner Crash Fix
+- **Problem:** App crashed when updating ShowcaseBanner due to a double-dispose of the YoutubePlayerController.
+- **Solution:** Nullified the controller in the disposal flow so that it isn't incorrectly accessed by the widget tree after the framework disposes it.
+
+### 8. ??? AI Metadata Fallback
+- **Problem:** When the Gemini API returned a 403 Permission Denied error (due to restricted or exhausted quota on the user's Google Cloud project), submitting a film would fail completely.
+- **Solution:** Modified i_service.dart to catch the exception and return fallback mock metadata. This guarantees students can still submit films and complete their workflow even if the Google API goes down or blocks the key.
+
+### 9. ?? Semantic Search (Objective 3 Completed)
+- **Problem:** Search didn't include the AI-generated keywords, missing out on semantic matches.
+- **Solution:** Updated the _results filtering logic in search_screen.dart to cross-reference the user's query against the iKeywords list attached to each film, fulfilling the Semantic Search requirement.
+
+### 10. ?? Custom Notification Icon & Theming
+- **Problem:** Android forces status bar notification icons to be solid white shapes with transparent backgrounds. Because the app's logo had a solid green background, notifications appeared as blank white squares.
+- **Solution:** 
+  - Wrote a Python script utilizing Pillow to isolate the yellow laurel branch and camera aperture from the logo.
+  - Converted the isolated shapes into a crisp white silhouette, applied a dilation filter to thicken thin lines, and saved it as ic_notification.png.
+  - Wired AndroidManifest.xml and lutter_local_notifications to use this new silhouette.
+
+### 11. ?? Returned Documentaries Workflow (Objective 6 Related)
+- **Problem:** Students didn't know when a DevCom officer returned (rejected) their documentary, nor could they see the returned items.
+- **Solution:** 
+  - **Targeted Notifications:** Implemented a new Firebase topic structure (user_<uid>) where each student silently subscribes to their own UID upon login. Updated devcom_dashboard_screen.dart and cm_token_service.dart to fire a personalized push notification specifically to the submitter when their film is marked as 'Returned'.
+  - **Profile Integration:** Added a new **'Returned Documentaries'** horizontal scroll section to profile_screen.dart, visually highlighting returned films with red borders and displaying the officer's note.
+  - **Code Changes:** Expanded FilmSubmission model to retain uploaderId to facilitate direct targeting.
+
+### 12. 📂 "My Submissions" UI/UX Refactor
+- **Problem:** The newly added "Returned Documentaries" and "My Submissions" lists on the Profile screen cluttered the main view, and an unresolved composite index error broke the view entirely.
+- **Solution:** 
+  - **Firestore Index Fix:** Removed `.orderBy('createdAt', descending: true)` from the Firestore stream and handled chronological sorting locally in Dart (`films.sort((a, b) => b.createdAt.compareTo(a.createdAt))`) to bypass the `FAILED_PRECONDITION` index requirement entirely.
+  - **Screen Segregation:** Extracted the visual layout for submissions into a dedicated `MySubmissionsScreen`.
+  - **Role Gating:** Nested the access point to this new screen inside the Profile's "Account" section as a menu tile. Dynamically gated this menu tile so it is strictly visible only to users bearing the "CAS Student" role.
