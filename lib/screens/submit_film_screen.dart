@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:async';
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import '../services/fcm_token_service.dart';
 import '../services/ai_service.dart';
 
@@ -22,6 +25,8 @@ class _SubmitFilmScreenState extends State<SubmitFilmScreen> {
   int loadingPercentage = 0;
   Timer? _progressTimer;
   String? errorMessage;
+  File? _coverPhoto;
+  bool _isNewDocumentary = true;
 
   String? _selectedGenre;
   final List<String> _genres = [
@@ -47,17 +52,25 @@ class _SubmitFilmScreenState extends State<SubmitFilmScreen> {
     }
   }
 
+  Future<void> _pickCoverPhoto() async {
+    final result = await FilePicker.platform.pickFiles(type: FileType.image);
+    if (result != null && result.files.single.path != null) {
+      setState(() {
+        _coverPhoto = File(result.files.single.path!);
+      });
+    }
+  }
+
   Future<void> _uploadFilm() async {
     if (titleController.text.trim().isEmpty ||
         directorController.text.trim().isEmpty ||
-        descController.text.trim().isEmpty ||
         urlController.text.trim().isEmpty) {
-      setState(() => errorMessage = 'Please fill in all fields.');
+      setState(() => errorMessage = 'Please fill in all required fields.');
       return;
     }
 
-    final uri = Uri.parse(urlController.text.trim());
-    final youtubeId = uri.queryParameters['v'];
+    final uri = Uri.tryParse(urlController.text.trim());
+    final youtubeId = uri?.queryParameters['v'];
 
     if (youtubeId == null || youtubeId.isEmpty) {
       setState(() =>
@@ -72,7 +85,7 @@ class _SubmitFilmScreenState extends State<SubmitFilmScreen> {
 
     setState(() {
       isLoading = true;
-      loadingText = 'Generating AI Metadata...';
+      loadingText = 'Preparing upload...';
       loadingPercentage = 0;
       errorMessage = null;
     });
@@ -86,9 +99,17 @@ class _SubmitFilmScreenState extends State<SubmitFilmScreen> {
     });
 
     try {
+      // Since Firebase Storage is disabled, we rely solely on YouTube thumbnails.
+      String thumbnailUrl = 'https://img.youtube.com/vi/$youtubeId/hqdefault.jpg';
+
+      setState(() {
+        loadingText = 'Generating AI Metadata...';
+      });
+
       final aiData = await AiService.generateMetadata(
         titleController.text.trim(),
         descController.text.trim(),
+        youtubeId: youtubeId,
       );
 
       _progressTimer?.cancel();
@@ -98,7 +119,6 @@ class _SubmitFilmScreenState extends State<SubmitFilmScreen> {
       });
 
       final uid = FirebaseAuth.instance.currentUser?.uid;
-      final thumbnail = 'https://img.youtube.com/vi/$youtubeId/hqdefault.jpg';
 
       await FirebaseFirestore.instance.collection('films').add({
         'title': titleController.text.trim(),
@@ -107,13 +127,14 @@ class _SubmitFilmScreenState extends State<SubmitFilmScreen> {
         'genre': _selectedGenre,
         'year': DateTime.now().year,
         'youtubeId': youtubeId,
-        'thumbnail': thumbnail,
+        'thumbnail': thumbnailUrl,
         'uploadedBy': uid,
         'uploaderName': FirebaseAuth.instance.currentUser?.email?.split('@')[0],
         'status': 'pending',
         'createdAt': FieldValue.serverTimestamp(),
         'aiSummary': aiData.summary,
         'aiKeywords': aiData.keywords,
+        'isOldDocumentary': !_isNewDocumentary,
       });
 
       if (mounted) {
@@ -235,14 +256,14 @@ class _SubmitFilmScreenState extends State<SubmitFilmScreen> {
             const SizedBox(height: 16),
 
             // Description
-            const Text('Description', style: TextStyle(color: Colors.white70)),
+            const Text('Description (Optional)', style: TextStyle(color: Colors.white70)),
             const SizedBox(height: 6),
             TextField(
               controller: descController,
               maxLines: 4,
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
-                hintText: 'Brief description of the film...',
+                hintText: 'Leave blank to let AI Insight generate it automatically...',
                 hintStyle: const TextStyle(color: Colors.white38),
                 filled: true,
                 fillColor: const Color(0xFF1A3528),
@@ -299,6 +320,35 @@ class _SubmitFilmScreenState extends State<SubmitFilmScreen> {
             ),
             const SizedBox(height: 16),
 
+            // Documentary Age Type
+            const Text('Documentary Type', style: TextStyle(color: Colors.white70)),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: RadioListTile<bool>(
+                    value: true,
+                    groupValue: _isNewDocumentary,
+                    title: const Text('New Documentary', style: TextStyle(color: Colors.white, fontSize: 13)),
+                    activeColor: const Color(0xFF4CAF50),
+                    contentPadding: EdgeInsets.zero,
+                    onChanged: (val) => setState(() => _isNewDocumentary = val!),
+                  ),
+                ),
+                Expanded(
+                  child: RadioListTile<bool>(
+                    value: false,
+                    groupValue: _isNewDocumentary,
+                    title: const Text('Old Documentary', style: TextStyle(color: Colors.white, fontSize: 13)),
+                    activeColor: const Color(0xFF4CAF50),
+                    contentPadding: EdgeInsets.zero,
+                    onChanged: (val) => setState(() => _isNewDocumentary = val!),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
             // YouTube URL
             const Text('YouTube URL', style: TextStyle(color: Colors.white70)),
             const SizedBox(height: 6),
@@ -330,6 +380,8 @@ class _SubmitFilmScreenState extends State<SubmitFilmScreen> {
               'Tip: Upload your film to YouTube first, then paste the link here.',
               style: TextStyle(fontSize: 11, color: Colors.white38),
             ),
+            const SizedBox(height: 16),
+
 
             // Error message
             if (errorMessage != null) ...[

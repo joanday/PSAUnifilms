@@ -90,7 +90,7 @@ class _HomeScreenState extends State<HomeScreen> {
           
           final sevenDaysAgo = now.subtract(const Duration(days: 7));
           final newlyUploaded = allFilms
-              .where((f) => f.createdAt != null && f.createdAt!.isAfter(sevenDaysAgo))
+              .where((f) => f.createdAt != null && f.createdAt!.isAfter(sevenDaysAgo) && !f.isOldDocumentary)
               .take(5)
               .toList();
 

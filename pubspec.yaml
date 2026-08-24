@@ -25,6 +25,9 @@ dependencies:
   googleapis_auth: ^2.3.3
   http: ^1.6.0
   google_generative_ai: ^0.4.7
+  youtube_explode_dart: ^3.1.0
+  chewie: ^1.13.1
+  firebase_storage: ^13.4.6
 
 dev_dependencies:
   flutter_launcher_icons: ^0.13.1

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:youtube_player_flutter/youtube_player_flutter.dart';
+import '../widgets/custom_video_player.dart';
 
 class WatchScreen extends StatefulWidget {
   final String youtubeId;
@@ -18,39 +18,12 @@ class WatchScreen extends StatefulWidget {
 }
 
 class _WatchScreenState extends State<WatchScreen> {
-  late YoutubePlayerController _controller;
-
-  // Moved here from profile_screen.dart so quality/subtitle preferences are
-  // reachable directly from the player instead of buried in Profile &
-  // Settings. Note: youtube_player_flutter doesn't expose a real API to
-  // force YouTube's actual playback bitrate, so "Video Quality" here is a
-  // stored preference only, same as it was on the Profile screen before —
-  // it isn't wired into YouTube's actual stream selection.
   String _videoQuality = 'HD (720p)';
   String _subtitleLanguage = 'Filipino';
 
   static const _greenPrime = Color(0xFF4CAF50);
   static const _bgCard = Color(0xFF16241C);
   static const _textMuted = Colors.white60;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = YoutubePlayerController(
-      initialVideoId: widget.youtubeId,
-      flags: const YoutubePlayerFlags(
-        autoPlay: true,
-        mute: false,
-        enableCaption: true,
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
 
   void _showPlaybackSettings() {
     showModalBottomSheet(
@@ -161,9 +134,6 @@ class _WatchScreenState extends State<WatchScreen> {
                     onChanged: (v) {
                       setState(() => _subtitleLanguage = v!);
                       Navigator.pop(context);
-                      // TODO: wire this into the YouTube player's caption
-                      // track once you decide how captions are sourced
-                      // (YouTube's own tracks vs. your own subtitle files).
                     },
                   ))
               .toList(),
@@ -174,86 +144,74 @@ class _WatchScreenState extends State<WatchScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return YoutubePlayerBuilder(
-      player: YoutubePlayer(
-        controller: _controller,
-        showVideoProgressIndicator: true,
-        progressIndicatorColor: Colors.deepPurple,
-        bottomActions: const [
-          CurrentPosition(),
-          ProgressBar(isExpanded: true),
-          RemainingDuration(),
-          FullScreenButton(),
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        title: Text(
+          widget.title,
+          overflow: TextOverflow.ellipsis,
+        ),
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: 'Playback settings',
+            onPressed: _showPlaybackSettings,
+          ),
         ],
       ),
-      builder: (context, player) {
-        return Scaffold(
-          backgroundColor: Colors.black,
-          appBar: AppBar(
-            title: Text(
-              widget.title,
-              overflow: TextOverflow.ellipsis,
-            ),
-            backgroundColor: Colors.black,
-            foregroundColor: Colors.white,
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.settings_outlined),
-                tooltip: 'Playback settings',
-                onPressed: _showPlaybackSettings,
-              ),
-            ],
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Custom Clean Native Video Player
+          CustomVideoPlayer(
+            youtubeId: widget.youtubeId,
+            autoPlay: true,
           ),
-          body: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Video Player
-              player,
 
-              // Film Details
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        widget.title,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      const Divider(color: Colors.grey),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'Description',
-                        style: TextStyle(
-                          color: Colors.grey,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 1,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        widget.description,
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 15,
-                          height: 1.5,
-                        ),
-                      ),
-                    ],
+          // Film Details
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 12),
+                  const Divider(color: Colors.grey),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Description',
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    widget.description,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 15,
+                      height: 1.5,
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-        );
-      },
+        ],
+      ),
     );
   }
 }

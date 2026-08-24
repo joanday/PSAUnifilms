@@ -350,11 +350,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 fontWeight: FontWeight.w500)),
       );
 
-  static Widget _settingsCard(List<Widget> tiles) => Container(
-        decoration: BoxDecoration(
-            color: AppTheme.bgCard,
+  static Widget _settingsCard(List<Widget> tiles) => Material(
+        color: AppTheme.bgCard,
+        shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppTheme.borderColor)),
+            side: const BorderSide(color: AppTheme.borderColor)),
+        clipBehavior: Clip.antiAlias,
         child: Column(
           children: tiles.asMap().entries.map((e) {
             final isLast = e.key == tiles.length - 1;

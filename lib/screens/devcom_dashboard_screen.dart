@@ -21,6 +21,7 @@ class FilmSubmission {
   String note;
   final String colorHex;
   final String thumbnail;
+  final bool isOldDocumentary;
 
   FilmSubmission({
     required this.id,
@@ -34,6 +35,7 @@ class FilmSubmission {
     required this.colorHex,
     this.note = '',
     this.thumbnail = '',
+    this.isOldDocumentary = false,
   });
 }
 
@@ -86,6 +88,7 @@ class _DevcomDashboardScreenState extends State<DevcomDashboardScreen> {
               colorHex: '4A7C59',
               note: data['note'] ?? '',
               thumbnail: data['thumbnail'] ?? '',
+              isOldDocumentary: data['isOldDocumentary'] ?? false,
             );
           }).toList());
 
@@ -120,7 +123,10 @@ class _DevcomDashboardScreenState extends State<DevcomDashboardScreen> {
       // 5. Send push notification if returning or approving
       if (newStatus == SubmissionStatus.approved) {
         // Trigger notification directly from the client without Blaze!
-        sendApprovalNotification(title);
+        final isOld = doc.data()?['isOldDocumentary'] ?? false;
+        if (!isOld) {
+          sendApprovalNotification(title);
+        }
       } else if (newStatus == SubmissionStatus.returned) {
         sendReturnNotification(uploaderId, title, note);
       }

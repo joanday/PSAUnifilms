@@ -17,6 +17,7 @@ class Film {
   final String status;
   final String aiSummary;
   final List<String> aiKeywords;
+  final bool isOldDocumentary;
 
   const Film({
     required this.id,
@@ -28,13 +29,14 @@ class Film {
     required this.thumbnailUrl,
     required this.description,
     required this.videoUrl,
-    this.youtubeId, // ← added
+    this.youtubeId,
     this.uploadedBy = '',
     this.uploaderName = '',
     this.createdAt,
     this.status = 'approved',
     this.aiSummary = '',
     this.aiKeywords = const [],
+    this.isOldDocumentary = false,
   });
 
   factory Film.fromFirestore(DocumentSnapshot doc) {
@@ -53,13 +55,14 @@ class Film {
       thumbnailUrl: data['thumbnail'] ?? data['thumbnailUrl'] ?? '',
       description: data['description'] ?? '',
       videoUrl: data['videoUrl'] ?? '',
-      youtubeId: data['youtubeId'], // ← added
+      youtubeId: data['youtubeId'],
       uploadedBy: data['uploadedBy'] ?? '',
       uploaderName: data['uploaderName'] ?? 'Student',
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
       status: data['status'] ?? 'approved',
       aiSummary: data['aiSummary'] ?? '',
       aiKeywords: List<String>.from(data['aiKeywords'] ?? []),
+      isOldDocumentary: data['isOldDocumentary'] ?? false,
     );
   }
 }

@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'student_main_nav_screen.dart';
 import 'devcom_dashboard_screen.dart';
 import 'signup_screen.dart';
@@ -19,17 +21,61 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _obscurePass = true;
   bool _isLoading = false;
+  
+  List<Map<String, String>> _savedAccounts = [];
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedAccounts();
+  }
+
+  Future<void> _loadSavedAccounts() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedData = prefs.getString('saved_accounts');
+    if (savedData != null) {
+      try {
+        final List<dynamic> decoded = jsonDecode(savedData);
+        setState(() {
+          _savedAccounts = decoded.map((e) => Map<String, String>.from(e)).toList();
+        });
+      } catch (e) {
+        debugPrint('Failed to decode saved accounts: $e');
+      }
+    }
+  }
+
+  Future<void> _saveAccountLocally(String email, String password) async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    // Check if it already exists
+    final existingIndex = _savedAccounts.indexWhere((acc) => acc['email'] == email);
+    if (existingIndex != -1) {
+      _savedAccounts[existingIndex]['password'] = password;
+    } else {
+      _savedAccounts.add({'email': email, 'password': password});
+    }
+    
+    await prefs.setString('saved_accounts', jsonEncode(_savedAccounts));
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   Future<void> _saveLoginLog(User user) async {
-    await _firestore.collection('login_logs').add({
-      'userId': user.uid,
-      'email': user.email,
-      'loginTime': FieldValue.serverTimestamp(),
-      'status': 'success',
-    });
+    try {
+      await _firestore.collection('login_logs').add({
+        'userId': user.uid,
+        'email': user.email,
+        'loginTime': FieldValue.serverTimestamp(),
+        'status': 'success',
+      });
+    } catch (e) {
+      debugPrint('Failed to save login log: $e');
+    }
   }
 
   /// Roles are stored capitalized in Firestore (e.g. 'Viewer', 'CAS Student',
@@ -81,6 +127,7 @@ class _LoginScreenState extends State<LoginScreen> {
         password: _passwordCtrl.text.trim(),
       );
 
+      await _saveAccountLocally(_emailCtrl.text.trim(), _passwordCtrl.text.trim());
       await _saveLoginLog(credential.user!);
 
       if (!mounted) return;
@@ -327,6 +374,67 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ],
               ),
+              
+              if (_savedAccounts.isNotEmpty) ...[
+                const SizedBox(height: 48),
+                const Center(
+                  child: Text(
+                    'Recent Accounts',
+                    style: TextStyle(
+                      color: Colors.white54,
+                      fontSize: 12,
+                      letterSpacing: 0.5,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  height: 60,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _savedAccounts.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 12),
+                    itemBuilder: (context, index) {
+                      final acc = _savedAccounts[index];
+                      return GestureDetector(
+                        onTap: () {
+                          _emailCtrl.text = acc['email'] ?? '';
+                          _passwordCtrl.text = acc['password'] ?? '';
+                          _onLogin();
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF162820),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.white12),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const CircleAvatar(
+                                radius: 14,
+                                backgroundColor: Color(0xFF3D8B40),
+                                child: Icon(Icons.person, size: 16, color: Colors.white),
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                acc['email'] ?? '',
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ],
           ),
         ),

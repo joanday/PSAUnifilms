@@ -1,8 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:youtube_player_flutter/youtube_player_flutter.dart';
+import 'package:file_picker/file_picker.dart';
+import '../widgets/custom_video_player.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart' show YoutubePlayer;
 import '../services/ai_service.dart';
 
 class SubmitScreen extends StatefulWidget {
@@ -22,6 +26,8 @@ class _SubmitScreenState extends State<SubmitScreen> {
   int _loadingPercentage = 0;
   Timer? _progressTimer;
   String? _previewId;
+  File? _coverPhoto;
+  bool _isNewDocumentary = true;
 
   String? _selectedGenre;
   final List<String> _genres = [
@@ -55,7 +61,15 @@ class _SubmitScreenState extends State<SubmitScreen> {
     }
   }
 
-  // ✅ Clears all fields and resets the form
+  Future<void> _pickCoverPhoto() async {
+    final result = await FilePicker.platform.pickFiles(type: FileType.image);
+    if (result != null && result.files.single.path != null) {
+      setState(() {
+        _coverPhoto = File(result.files.single.path!);
+      });
+    }
+  }
+
   void _resetForm() {
     _titleController.clear();
     _directorController.clear();
@@ -64,6 +78,7 @@ class _SubmitScreenState extends State<SubmitScreen> {
     setState(() {
       _previewId = null;
       _selectedGenre = null;
+      _coverPhoto = null;
     });
   }
 
@@ -75,10 +90,11 @@ class _SubmitScreenState extends State<SubmitScreen> {
       _youtubeLinkController.text.trim(),
     );
 
-    if (title.isEmpty || director.isEmpty || desc.isEmpty || youtubeId == null) {
+    // Description is now optional
+    if (title.isEmpty || director.isEmpty || youtubeId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please fill all fields with a valid YouTube link.'),
+          content: Text('Please fill all required fields (Title, Director, YouTube URL).'),
         ),
       );
       return;
@@ -95,7 +111,7 @@ class _SubmitScreenState extends State<SubmitScreen> {
 
     setState(() {
       _isLoading = true;
-      _loadingText = 'Generating AI Metadata...';
+      _loadingText = 'Preparing upload...';
       _loadingPercentage = 0;
     });
 
@@ -108,9 +124,17 @@ class _SubmitScreenState extends State<SubmitScreen> {
     });
 
     try {
+      // Since Firebase Storage is disabled, we rely solely on YouTube thumbnails.
+      String thumbnailUrl = 'https://img.youtube.com/vi/$youtubeId/hqdefault.jpg';
+
+      setState(() {
+        _loadingText = 'Generating AI Metadata...';
+      });
+
       final aiData = await AiService.generateMetadata(
         title,
         desc,
+        youtubeId: youtubeId,
       );
 
       _progressTimer?.cancel();
@@ -126,17 +150,18 @@ class _SubmitScreenState extends State<SubmitScreen> {
         'genre': _selectedGenre,
         'year': DateTime.now().year,
         'youtubeId': youtubeId,
-        'thumbnail': 'https://img.youtube.com/vi/$youtubeId/hqdefault.jpg',
+        'thumbnail': thumbnailUrl,
         'uploadedBy': FirebaseAuth.instance.currentUser?.uid,
         'uploaderName': FirebaseAuth.instance.currentUser?.email?.split('@')[0],
         'status': 'pending',
         'createdAt': FieldValue.serverTimestamp(),
         'aiSummary': aiData.summary,
         'aiKeywords': aiData.keywords,
+        'isOldDocumentary': !_isNewDocumentary,
       });
 
       if (mounted) {
-        _resetForm(); // ✅ clear form instead of Navigator.pop
+        _resetForm();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Film submitted! Waiting for approval.'),
@@ -233,14 +258,14 @@ class _SubmitScreenState extends State<SubmitScreen> {
             const SizedBox(height: 16),
 
             // Description Field
-            const Text('Description', style: TextStyle(color: Colors.white70)),
+            const Text('Description (Optional)', style: TextStyle(color: Colors.white70)),
             const SizedBox(height: 6),
             TextField(
               controller: _descController,
               maxLines: 3,
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
-                hintText: 'Brief description of the film...',
+                hintText: 'Leave blank to let AI Insight generate it automatically...',
                 hintStyle: const TextStyle(color: Colors.white38),
                 filled: true,
                 fillColor: const Color(0xFF1A3528),
@@ -266,7 +291,6 @@ class _SubmitScreenState extends State<SubmitScreen> {
             const Text('Theme', style: TextStyle(color: Colors.white70)),
             const SizedBox(height: 6),
             DropdownButtonFormField<String>(
-              // ignore: deprecated_member_use
               value: _selectedGenre,
               hint: const Text('Select a Theme', style: TextStyle(color: Colors.white38)),
               dropdownColor: const Color(0xFF1A3528),
@@ -297,6 +321,35 @@ class _SubmitScreenState extends State<SubmitScreen> {
               onChanged: (val) {
                 if (val != null) setState(() => _selectedGenre = val);
               },
+            ),
+            const SizedBox(height: 16),
+
+            // Documentary Age Type
+            const Text('Documentary Type', style: TextStyle(color: Colors.white70)),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: RadioListTile<bool>(
+                    value: true,
+                    groupValue: _isNewDocumentary,
+                    title: const Text('New Documentary', style: TextStyle(color: Colors.white, fontSize: 13)),
+                    activeColor: const Color(0xFF4CAF50),
+                    contentPadding: EdgeInsets.zero,
+                    onChanged: (val) => setState(() => _isNewDocumentary = val!),
+                  ),
+                ),
+                Expanded(
+                  child: RadioListTile<bool>(
+                    value: false,
+                    groupValue: _isNewDocumentary,
+                    title: const Text('Old Documentary', style: TextStyle(color: Colors.white, fontSize: 13)),
+                    activeColor: const Color(0xFF4CAF50),
+                    contentPadding: EdgeInsets.zero,
+                    onChanged: (val) => setState(() => _isNewDocumentary = val!),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
 
@@ -331,11 +384,6 @@ class _SubmitScreenState extends State<SubmitScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 8),
-            const Text(
-              'Tip: Upload your film to YouTube first, then paste the link here.',
-              style: TextStyle(fontSize: 11, color: Colors.white38),
-            ),
             const SizedBox(height: 16),
 
             // Video Preview
@@ -346,16 +394,9 @@ class _SubmitScreenState extends State<SubmitScreen> {
                       fontSize: 16,
                       color: Colors.white)),
               const SizedBox(height: 8),
-              YoutubePlayer(
-                controller: YoutubePlayerController(
-                  initialVideoId: _previewId!,
-                  flags: const YoutubePlayerFlags(
-                    autoPlay: false,
-                    mute: false,
-                  ),
-                ),
-                showVideoProgressIndicator: true,
-                progressIndicatorColor: const Color(0xFF4CAF50),
+              CustomVideoPlayer(
+                youtubeId: _previewId!,
+                autoPlay: false,
               ),
               const SizedBox(height: 16),
             ],
@@ -387,6 +428,7 @@ class _SubmitScreenState extends State<SubmitScreen> {
                 ),
               ),
             ),
+            const SizedBox(height: 24),
           ],
         ),
       ),
