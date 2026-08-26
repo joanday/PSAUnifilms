@@ -2,6 +2,8 @@ const {onDocumentUpdated} = require("firebase-functions/v2/firestore");
 const {initializeApp} = require("firebase-admin/app");
 const {getMessaging} = require("firebase-admin/messaging");
 
+const {getFirestore} = require("firebase-admin/firestore");
+
 initializeApp();
 
 // Trigger when a film is approved by an officer
@@ -26,3 +28,5 @@ exports.notifyOnNewUpload = onDocumentUpdated(
       }
     },
 );
+
+

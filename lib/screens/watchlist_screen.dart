@@ -91,10 +91,9 @@ class WatchlistScreen extends StatelessWidget {
 
           // List
           final docs = snapshot.data!.docs;
-          return ListView.separated(
+          return ListView.builder(
             padding: const EdgeInsets.all(16),
             itemCount: docs.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
             itemBuilder: (context, index) {
               final data = docs[index].data() as Map<String, dynamic>;
 
@@ -117,7 +116,7 @@ class WatchlistScreen extends StatelessWidget {
                 status: data['status'] ?? 'approved',
               );
 
-              return _WatchlistCard(film: film);
+              return _WatchlistCard(film: film, uid: uid);
             },
           );
         },
@@ -128,24 +127,66 @@ class WatchlistScreen extends StatelessWidget {
 
 class _WatchlistCard extends StatelessWidget {
   final Film film;
-  const _WatchlistCard({required this.film});
+  final String uid;
+  const _WatchlistCard({required this.film, required this.uid});
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => FilmDetailScreen(film: film)),
-      ),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1A2E22),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: const Color(0xFF2A4535), width: 0.5),
-        ),
-        child: Row(
-          children: [
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance.collection('films').doc(film.id).snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const SizedBox.shrink();
+
+        final data = snapshot.data!.data() as Map<String, dynamic>?;
+
+        // Hide and remove if the film is deleted or returned
+        if (!snapshot.data!.exists || data == null || data['status'] == 'returned') {
+          Future.microtask(() {
+            FirebaseFirestore.instance
+                .collection('users')
+                .doc(uid)
+                .collection('watchlist')
+                .doc(film.id)
+                .delete();
+          });
+          return const SizedBox.shrink();
+        }
+
+        final currentFilm = Film(
+          id: film.id,
+          title: data['title'] ?? film.title,
+          genre: data['genre'] ?? film.genre,
+          year: data['year'] is int
+              ? data['year']
+              : int.tryParse('${data['year']}') ?? film.year,
+          rating: data['rating'] != null
+              ? (data['rating'] as num).toDouble()
+              : film.rating,
+          thumbnailUrl: data['thumbnailUrl'] ?? film.thumbnailUrl,
+          description: data['description'] ?? film.description,
+          videoUrl: data['videoUrl'] ?? film.videoUrl,
+          youtubeId: data['youtubeId'] ?? film.youtubeId,
+          uploadedBy: data['uploadedBy'] ?? film.uploadedBy,
+          uploaderName: data['uploaderName'] ?? film.uploaderName,
+          status: data['status'] ?? film.status,
+        );
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: GestureDetector(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => FilmDetailScreen(film: currentFilm)),
+            ),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A2E22),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFF2A4535), width: 0.5),
+              ),
+              child: Row(
+                children: [
             // Thumbnail
             ClipRRect(
               borderRadius: BorderRadius.circular(6),
@@ -197,6 +238,9 @@ class _WatchlistCard extends StatelessWidget {
           ],
         ),
       ),
+    ),
+  );
+      },
     );
   }
 

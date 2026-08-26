@@ -17,7 +17,7 @@ class AiService {
   static Future<AiMetadata> generateMetadata(String title, String description, {String? youtubeId}) async {
     try {
       final model = GenerativeModel(
-        model: 'gemini-flash-latest',
+        model: 'gemini-3.6-flash',
         apiKey: _apiKey,
       );
 
@@ -78,8 +78,8 @@ $transcriptText
 
 IMPORTANT INSTRUCTIONS:
 1. The transcript may be in Tagalog, Kapampangan, or English. You are fully capable of understanding these languages.
-2. DO NOT guess the plot based on the title. You must heavily rely on the VIDEO TRANSCRIPT provided above to understand exactly what the video is about.
-3. If the user's provided description is empty or too short, IGNORE IT and rely on the transcript and YouTube metadata.
+2. If a transcript is available, rely on it to understand what the video is about.
+3. If the transcript says "No transcript available.", DO NOT write an error message or complain about missing data. Instead, generate the best possible professional summary and keywords based purely on the Title and Description. Under NO circumstances should you say a summary cannot be generated.
 4. Generate a highly professional, accurate summary (3-4 sentences max) in ENGLISH describing the true themes, cultural relevance, and potential impact of this documentary based on its spoken content.
 5. Generate a list of 5 to 8 highly relevant searchable keywords/tags (these can be English, Tagalog, or Kapampangan) that describe the actual concepts discussed in the video.
 

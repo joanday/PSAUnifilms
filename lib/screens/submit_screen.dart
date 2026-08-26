@@ -131,11 +131,20 @@ class _SubmitScreenState extends State<SubmitScreen> {
         _loadingText = 'Generating AI Metadata...';
       });
 
-      final aiData = await AiService.generateMetadata(
-        title,
-        desc,
-        youtubeId: youtubeId,
-      );
+      String aiSummary = '';
+      List<String> aiKeywords = [];
+
+      try {
+        final aiData = await AiService.generateMetadata(
+          title,
+          desc,
+          youtubeId: youtubeId,
+        );
+        aiSummary = aiData.summary;
+        aiKeywords = aiData.keywords;
+      } catch (aiError) {
+        aiSummary = 'AI Generation Failed: $aiError. Tap to retry.';
+      }
 
       _progressTimer?.cancel();
       setState(() {
@@ -155,8 +164,8 @@ class _SubmitScreenState extends State<SubmitScreen> {
         'uploaderName': FirebaseAuth.instance.currentUser?.email?.split('@')[0],
         'status': 'pending',
         'createdAt': FieldValue.serverTimestamp(),
-        'aiSummary': aiData.summary,
-        'aiKeywords': aiData.keywords,
+        'aiSummary': aiSummary,
+        'aiKeywords': aiKeywords,
         'isOldDocumentary': !_isNewDocumentary,
       });
 

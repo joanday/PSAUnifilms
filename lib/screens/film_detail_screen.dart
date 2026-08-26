@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../theme/app_theme.dart';
 import '../models/film.dart';
 import '../widgets/custom_video_player.dart';
+import '../services/ai_service.dart';
 
 class FilmDetailScreen extends StatefulWidget {
   final Film film;
@@ -15,6 +16,35 @@ class FilmDetailScreen extends StatefulWidget {
 class _FilmDetailScreenState extends State<FilmDetailScreen> {
   bool _inWatchlist = false;
   bool _loadingWatchlist = true;
+  bool _isRegeneratingAi = false;
+
+  Future<void> _regenerateAi() async {
+    setState(() => _isRegeneratingAi = true);
+    try {
+      final aiData = await AiService.generateMetadata(
+        widget.film.title,
+        widget.film.description,
+        youtubeId: widget.film.youtubeId ?? '',
+      );
+      await FirebaseFirestore.instance.collection('films').doc(widget.film.id).update({
+        'aiSummary': aiData.summary,
+        'aiKeywords': aiData.keywords,
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('AI Insights regenerated successfully!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to regenerate: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isRegeneratingAi = false);
+    }
+  }
 
   String get _uid => FirebaseAuth.instance.currentUser!.uid;
 
@@ -200,87 +230,132 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
                     const SizedBox(height: 24),
 
                     // AI Analysis Section
-                    if (widget.film.aiSummary.isNotEmpty || widget.film.aiKeywords.isNotEmpty)
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF132A1D),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppTheme.greenPrime.withOpacity(0.3)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                const Icon(Icons.auto_awesome, color: AppTheme.greenPrime, size: 18),
-                                const SizedBox(width: 8),
-                                const Text(
-                                  'AI Insights',
-                                  style: TextStyle(
-                                    color: AppTheme.greenPrime,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 16,
+                    StreamBuilder<DocumentSnapshot>(
+                      stream: FirebaseFirestore.instance.collection('films').doc(widget.film.id).snapshots(),
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData) return const SizedBox.shrink();
+                        final data = snapshot.data!.data() as Map<String, dynamic>?;
+                        if (data == null) return const SizedBox.shrink();
+                        
+                        final aiSummary = data['aiSummary'] as String? ?? '';
+                        final aiKeywords = (data['aiKeywords'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+                        
+                        final bool hasError = aiSummary.toLowerCase().contains('error') || 
+                                              aiSummary.toLowerCase().contains('timed out') || 
+                                              aiSummary.toLowerCase().contains('failed') || 
+                                              aiSummary.toLowerCase().contains('exception') ||
+                                              (aiSummary.isEmpty && aiKeywords.isEmpty);
+
+                        return Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF132A1D),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppTheme.greenPrime.withOpacity(0.3)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.auto_awesome, color: AppTheme.greenPrime, size: 18),
+                                      const SizedBox(width: 8),
+                                      const Text(
+                                        'AI Insights',
+                                        style: TextStyle(
+                                          color: AppTheme.greenPrime,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              if (hasError) ...[
+                                Text(
+                                  aiSummary.isNotEmpty ? aiSummary : 'No AI Insight available.',
+                                  style: const TextStyle(color: Colors.white60, fontSize: 13, height: 1.5),
+                                ),
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: AppTheme.greenPrime,
+                                      side: const BorderSide(color: AppTheme.greenPrime),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    ),
+                                    onPressed: _isRegeneratingAi ? null : _regenerateAi,
+                                    icon: _isRegeneratingAi 
+                                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.greenPrime))
+                                      : const Icon(Icons.auto_awesome),
+                                    label: Text(_isRegeneratingAi ? 'Generating...' : 'Generate AI Insight'),
                                   ),
                                 ),
+                              ] else ...[
+                                if (aiSummary.isNotEmpty) ...[
+                                  const Text(
+                                    'Summary',
+                                    style: TextStyle(
+                                      color: Colors.white70,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    aiSummary,
+                                    style: const TextStyle(
+                                      color: Colors.white60,
+                                      fontSize: 13,
+                                      height: 1.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                ],
+                                if (aiKeywords.isNotEmpty) ...[
+                                  const Text(
+                                    'Keywords',
+                                    style: TextStyle(
+                                      color: Colors.white70,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 6,
+                                    children: aiKeywords.map((tag) {
+                                      return Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: AppTheme.greenPrime.withOpacity(0.15),
+                                          borderRadius: BorderRadius.circular(16),
+                                        ),
+                                        child: Text(
+                                          '#$tag',
+                                          style: const TextStyle(
+                                            color: AppTheme.greenPrime,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      );
+                                    }).toList(),
+                                  ),
+                                ],
                               ],
-                            ),
-                            const SizedBox(height: 12),
-                            if (widget.film.aiSummary.isNotEmpty) ...[
-                              const Text(
-                                'Summary',
-                                style: TextStyle(
-                                  color: Colors.white70,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                widget.film.aiSummary,
-                                style: const TextStyle(
-                                  color: Colors.white60,
-                                  fontSize: 13,
-                                  height: 1.5,
-                                ),
-                              ),
-                              const SizedBox(height: 16),
                             ],
-                            if (widget.film.aiKeywords.isNotEmpty) ...[
-                              const Text(
-                                'Keywords',
-                                style: TextStyle(
-                                  color: Colors.white70,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Wrap(
-                                spacing: 6,
-                                runSpacing: 6,
-                                children: widget.film.aiKeywords.map((tag) {
-                                  return Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.greenPrime.withOpacity(0.15),
-                                      borderRadius: BorderRadius.circular(16),
-                                    ),
-                                    child: Text(
-                                      '#$tag',
-                                      style: const TextStyle(
-                                        color: AppTheme.greenPrime,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  );
-                                }).toList(),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
+                          ),
+                        );
+                      },
+                    ),
                     const SizedBox(height: 24),
                   ],
                 ),

@@ -76,21 +76,25 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (context, snapshot) {
           final allFilms = snapshot.data ?? [];
           final films = _filterFilms(allFilms);
-          
+
           final now = DateTime.now();
-          final currentMonthFilms = allFilms.where((f) => 
-            f.createdAt != null && 
-            f.createdAt!.month == now.month && 
-            f.createdAt!.year == now.year
-          ).toList();
-          
-          final featured = currentMonthFilms.isNotEmpty 
-              ? currentMonthFilms.first 
+          final currentMonthFilms = allFilms
+              .where((f) =>
+                  f.createdAt != null &&
+                  f.createdAt!.month == now.month &&
+                  f.createdAt!.year == now.year)
+              .toList();
+
+          final featured = currentMonthFilms.isNotEmpty
+              ? currentMonthFilms.first
               : (allFilms.isNotEmpty ? allFilms.first : null);
-          
+
           final sevenDaysAgo = now.subtract(const Duration(days: 7));
           final newlyUploaded = allFilms
-              .where((f) => f.createdAt != null && f.createdAt!.isAfter(sevenDaysAgo) && !f.isOldDocumentary)
+              .where((f) =>
+                  f.createdAt != null &&
+                  f.createdAt!.isAfter(sevenDaysAgo) &&
+                  !f.isOldDocumentary)
               .take(5)
               .toList();
 
@@ -123,8 +127,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                 fontWeight: FontWeight.w700,
                                 color: Colors.white)),
                         Text('Student Films Showcase App',
-                            style: TextStyle(
-                                fontSize: 10, color: Colors.white54)),
+                            style:
+                                TextStyle(fontSize: 10, color: Colors.white54)),
                       ],
                     ),
                   ],
@@ -158,13 +162,12 @@ class _HomeScreenState extends State<HomeScreen> {
                               color: Colors.white, fontSize: 13),
                           decoration: const InputDecoration(
                             hintText: 'Search films...',
-                            hintStyle: TextStyle(
-                                color: Colors.white38, fontSize: 13),
+                            hintStyle:
+                                TextStyle(color: Colors.white38, fontSize: 13),
                             prefixIcon: Icon(Icons.search,
                                 color: Colors.white38, size: 20),
                             border: InputBorder.none,
-                            contentPadding:
-                                EdgeInsets.symmetric(vertical: 12),
+                            contentPadding: EdgeInsets.symmetric(vertical: 12),
                           ),
                           onChanged: (value) =>
                               setState(() => _searchQuery = value),
@@ -240,8 +243,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               onPressed: () => _goToSearch(),
                               child: const Text('View All',
                                   style: TextStyle(
-                                      color: Color(0xFF4CAF50),
-                                      fontSize: 12)),
+                                      color: Color(0xFF4CAF50), fontSize: 12)),
                             ),
                           ],
                         ),
@@ -279,7 +281,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             spacing: 16,
                             runSpacing: 20,
                             alignment: WrapAlignment.spaceBetween,
-                            children: allFilms.map((film) => _portraitFilmCard(film, context)).toList(),
+                            children: allFilms
+                                .map((film) => _portraitFilmCard(film, context))
+                                .toList(),
                           ),
                         ),
                       ],
@@ -334,8 +338,8 @@ class _HomeScreenState extends State<HomeScreen> {
                           fontSize: 13)),
                   const SizedBox(height: 4),
                   Text('${film.year} • ${film.genre}',
-                      style: const TextStyle(
-                          color: Colors.white54, fontSize: 12)),
+                      style:
+                          const TextStyle(color: Colors.white54, fontSize: 12)),
                   const SizedBox(height: 2),
                   Row(children: [
                     const Icon(Icons.star_rounded,
@@ -359,8 +363,8 @@ class _HomeScreenState extends State<HomeScreen> {
         width: 80,
         height: 56,
         color: const Color(0xFF1A3528),
-        child: const Icon(Icons.movie_outlined,
-            color: Colors.white24, size: 28),
+        child:
+            const Icon(Icons.movie_outlined, color: Colors.white24, size: 28),
       );
 
   Widget _portraitFilmCard(Film film, BuildContext context) {
@@ -388,14 +392,16 @@ class _HomeScreenState extends State<HomeScreen> {
                         width: cardWidth,
                         height: cardHeight,
                         color: const Color(0xFF1A3528),
-                        child: const Icon(Icons.movie, color: Colors.white24, size: 40),
+                        child: const Icon(Icons.movie,
+                            color: Colors.white24, size: 40),
                       ),
                     )
                   : Container(
                       width: cardWidth,
                       height: cardHeight,
                       color: const Color(0xFF1A3528),
-                      child: const Icon(Icons.movie, color: Colors.white24, size: 40),
+                      child: const Icon(Icons.movie,
+                          color: Colors.white24, size: 40),
                     ),
             ),
             const SizedBox(height: 8),
@@ -459,8 +465,7 @@ class _HomeScreenState extends State<HomeScreen> {
               decoration: BoxDecoration(
                 color: const Color(0xFF1A2E22),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                    color: const Color(0xFF2A4535), width: 0.5),
+                border: Border.all(color: const Color(0xFF2A4535), width: 0.5),
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -574,6 +579,5 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _goToDetail(Film film) => Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => FilmDetailScreen(film: film)));
+      context, MaterialPageRoute(builder: (_) => FilmDetailScreen(film: film)));
 }
