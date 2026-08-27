@@ -17,6 +17,7 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
   bool _inWatchlist = false;
   bool _loadingWatchlist = true;
   bool _isRegeneratingAi = false;
+  bool _isRegeneratingVisual = false;
 
   Future<void> _regenerateAi() async {
     setState(() => _isRegeneratingAi = true);
@@ -43,6 +44,33 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
       }
     } finally {
       if (mounted) setState(() => _isRegeneratingAi = false);
+    }
+  }
+
+  Future<void> _regenerateVisual() async {
+    setState(() => _isRegeneratingVisual = true);
+    try {
+      final youtubeId = widget.film.youtubeId ?? '';
+      if (youtubeId.isEmpty) throw Exception('No YouTube video linked.');
+      final visualDesc = await AiService.generateVisualDescription(youtubeId);
+      await FirebaseFirestore.instance
+          .collection('films')
+          .doc(widget.film.id)
+          .update({'visualDescription': visualDesc});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Visual analysis updated for CBVR!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Visual analysis failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isRegeneratingVisual = false);
     }
   }
 
@@ -251,7 +279,7 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
                           decoration: BoxDecoration(
                             color: const Color(0xFF132A1D),
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: AppTheme.greenPrime.withOpacity(0.3)),
+                            border: Border.all(color: AppTheme.greenPrime.withValues(alpha: 0.3)),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -335,7 +363,7 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
                                       return Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                         decoration: BoxDecoration(
-                                          color: AppTheme.greenPrime.withOpacity(0.15),
+                                          color: AppTheme.greenPrime.withValues(alpha: 0.15),
                                           borderRadius: BorderRadius.circular(16),
                                         ),
                                         child: Text(
@@ -351,6 +379,101 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
                                   ),
                                 ],
                               ],
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Visual Description (CBVR) Section
+                    StreamBuilder<DocumentSnapshot>(
+                      stream: FirebaseFirestore.instance
+                          .collection('films')
+                          .doc(widget.film.id)
+                          .snapshots(),
+                      builder: (context, snap) {
+                        if (!snap.hasData) return const SizedBox.shrink();
+                        final d = snap.data!.data() as Map<String, dynamic>?;
+                        if (d == null) return const SizedBox.shrink();
+                        final vd = d['visualDescription'] as String? ?? '';
+                        final hasVisual = vd.isNotEmpty &&
+                            !vd.toLowerCase().contains('unavailable');
+                        return Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0F2318),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                                color: const Color(0xFF1565C0).withValues(alpha: 0.5)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.videocam,
+                                      color: Color(0xFF42A5F5), size: 18),
+                                  const SizedBox(width: 8),
+                                  const Text(
+                                    'Visual Content (CBVR)',
+                                    style: TextStyle(
+                                      color: Color(0xFF42A5F5),
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              if (hasVisual) ...[
+                                Text(
+                                  vd,
+                                  style: const TextStyle(
+                                      color: Colors.white60,
+                                      fontSize: 13,
+                                      height: 1.5),
+                                ),
+                                const SizedBox(height: 12),
+                              ] else ...[
+                                const Text(
+                                  'No visual analysis yet. Run it below to enable CBVR search for this film.',
+                                  style: TextStyle(
+                                      color: Colors.white38,
+                                      fontSize: 13,
+                                      height: 1.5),
+                                ),
+                                const SizedBox(height: 12),
+                              ],
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: const Color(0xFF42A5F5),
+                                    side: const BorderSide(
+                                        color: Color(0xFF42A5F5)),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(8)),
+                                  ),
+                                  onPressed: _isRegeneratingVisual
+                                      ? null
+                                      : _regenerateVisual,
+                                  icon: _isRegeneratingVisual
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: Color(0xFF42A5F5)))
+                                      : const Icon(Icons.videocam_outlined),
+                                  label: Text(_isRegeneratingVisual
+                                      ? 'Analyzing frames...'
+                                      : hasVisual
+                                          ? 'Re-analyze Visual Content'
+                                          : 'Analyze Visual Content'),
+                                ),
+                              ),
                             ],
                           ),
                         );
@@ -404,7 +527,7 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
           left: 8,
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.4),
+              color: Colors.black.withValues(alpha: 0.4),
               shape: BoxShape.circle,
             ),
             child: IconButton(

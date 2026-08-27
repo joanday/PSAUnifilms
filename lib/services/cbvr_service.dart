@@ -48,6 +48,10 @@ class CbvrService {
             ? '${f.aiSummary.substring(0, 300)}...'
             : f.aiSummary,
         'keywords': f.aiKeywords,
+        // Core of true CBVR: Gemini Vision's analysis of actual video frames
+        'visualContent': f.visualDescription.isNotEmpty
+            ? f.visualDescription
+            : 'No visual analysis available.',
       };
     }).toList();
 
@@ -57,29 +61,36 @@ You are an expert Content-Based Video Retrieval (CBVR) system for a Philippine u
 A user has entered the following search query:
 "$query"
 
-Below is the full list of available films with their metadata (title, genre, description, AI summary, and keywords):
+Below is the full list of available films. Each film has:
+- Text metadata (title, genre, description, AI summary, keywords)
+- "visualContent": a Gemini Vision analysis of the ACTUAL VIDEO FRAMES describing what is
+  visually present (number of people, their genders, activities, setting, emotions, objects).
+  This is the most important field for CBVR — use it to match visual queries.
 
+Film data:
 ${jsonEncode(filmMetadata)}
 
-Your task is to analyze the user's intent and rank ONLY the films that are relevant to their query.
+Your task is to analyze the user\'s intent and rank ONLY the films that are relevant.
 
 INSTRUCTIONS:
-1. Understand the semantic meaning of the query, not just keyword overlap.
-2. For each relevant film, assign a relevance score from 0 to 100 (100 = perfect match).
-3. Write a short reason (max 12 words) explaining why the film matches the query.
-4. Only include films with a score of $minScore or above.
-5. Return films sorted from highest to lowest score.
-6. The reason should be in English and describe the content match (e.g., "Shows traditional rice farming in rural Pampanga").
+1. For visual queries (e.g., "three girls bonding", "tatlong babaeng nag b-bonding",
+   "farmers in the field", "children playing"), prioritize matching against the
+   "visualContent" field over text metadata.
+2. Understand both English AND Filipino/Tagalog queries fully.
+3. Assign a relevance score 0–100 (100 = perfect match).
+4. Write a short reason (max 12 words) explaining the match.
+5. Only include films with score >= $minScore.
+6. Sort from highest to lowest score.
 
-Respond ONLY with raw JSON in this exact format (no markdown, no extra text):
+Respond ONLY with raw JSON (no markdown):
 {
   "results": [
-    {"filmId": "abc123", "score": 92, "reason": "Directly covers rice farming and agricultural traditions"},
-    {"filmId": "xyz456", "score": 74, "reason": "Features community farming and rural Philippine life"}
+    {"filmId": "abc123", "score": 95, "reason": "Three young women bonding and laughing together"},
+    {"filmId": "xyz456", "score": 70, "reason": "Two women in a social activity outdoors"}
   ]
 }
 
-If NO films are relevant (all scores below $minScore), return: {"results": []}
+If NO films are relevant, return: {"results": []}
 ''';
 
     try {

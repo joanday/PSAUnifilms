@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:async';
-import 'dart:io';
-import 'package:file_picker/file_picker.dart';
 import '../services/fcm_token_service.dart';
 import '../services/ai_service.dart';
 
@@ -25,7 +22,6 @@ class _SubmitFilmScreenState extends State<SubmitFilmScreen> {
   int loadingPercentage = 0;
   Timer? _progressTimer;
   String? errorMessage;
-  File? _coverPhoto;
   bool _isNewDocumentary = true;
 
   String? _selectedGenre;
@@ -52,14 +48,6 @@ class _SubmitFilmScreenState extends State<SubmitFilmScreen> {
     }
   }
 
-  Future<void> _pickCoverPhoto() async {
-    final result = await FilePicker.platform.pickFiles(type: FileType.image);
-    if (result != null && result.files.single.path != null) {
-      setState(() {
-        _coverPhoto = File(result.files.single.path!);
-      });
-    }
-  }
 
   Future<void> _uploadFilm() async {
     if (titleController.text.trim().isEmpty ||
@@ -121,6 +109,17 @@ class _SubmitFilmScreenState extends State<SubmitFilmScreen> {
         aiSummary = 'AI Generation Failed: $aiError. Tap to retry.';
       }
 
+      // ── True CBVR: Gemini Vision analyzes actual video frames ──
+      setState(() {
+        loadingText = 'Analyzing video content (CBVR)...';
+      });
+      String visualDescription = '';
+      try {
+        visualDescription = await AiService.generateVisualDescription(youtubeId);
+      } catch (_) {
+        visualDescription = '';
+      }
+
       _progressTimer?.cancel();
       setState(() {
         loadingPercentage = 100;
@@ -143,6 +142,7 @@ class _SubmitFilmScreenState extends State<SubmitFilmScreen> {
         'createdAt': FieldValue.serverTimestamp(),
         'aiSummary': aiSummary,
         'aiKeywords': aiKeywords,
+        'visualDescription': visualDescription,
         'isOldDocumentary': !_isNewDocumentary,
       });
 
@@ -409,7 +409,7 @@ class _SubmitFilmScreenState extends State<SubmitFilmScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF2E7D52),
                   disabledBackgroundColor:
-                      const Color(0xFF2E7D52).withOpacity(0.6),
+                      const Color(0xFF2E7D52).withValues(alpha: 0.6),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                 ),

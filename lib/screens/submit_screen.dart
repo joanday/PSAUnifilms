@@ -1,10 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart';
 import '../widgets/custom_video_player.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart' show YoutubePlayer;
 import '../services/ai_service.dart';
@@ -26,7 +23,6 @@ class _SubmitScreenState extends State<SubmitScreen> {
   int _loadingPercentage = 0;
   Timer? _progressTimer;
   String? _previewId;
-  File? _coverPhoto;
   bool _isNewDocumentary = true;
 
   String? _selectedGenre;
@@ -61,14 +57,6 @@ class _SubmitScreenState extends State<SubmitScreen> {
     }
   }
 
-  Future<void> _pickCoverPhoto() async {
-    final result = await FilePicker.platform.pickFiles(type: FileType.image);
-    if (result != null && result.files.single.path != null) {
-      setState(() {
-        _coverPhoto = File(result.files.single.path!);
-      });
-    }
-  }
 
   void _resetForm() {
     _titleController.clear();
@@ -78,7 +66,6 @@ class _SubmitScreenState extends State<SubmitScreen> {
     setState(() {
       _previewId = null;
       _selectedGenre = null;
-      _coverPhoto = null;
     });
   }
 
@@ -146,6 +133,17 @@ class _SubmitScreenState extends State<SubmitScreen> {
         aiSummary = 'AI Generation Failed: $aiError. Tap to retry.';
       }
 
+      // ── True CBVR: Gemini Vision analyzes actual video frames ──
+      setState(() {
+        _loadingText = 'Analyzing video content (CBVR)...';
+      });
+      String visualDescription = '';
+      try {
+        visualDescription = await AiService.generateVisualDescription(youtubeId);
+      } catch (_) {
+        visualDescription = '';
+      }
+
       _progressTimer?.cancel();
       setState(() {
         _loadingPercentage = 100;
@@ -166,6 +164,7 @@ class _SubmitScreenState extends State<SubmitScreen> {
         'createdAt': FieldValue.serverTimestamp(),
         'aiSummary': aiSummary,
         'aiKeywords': aiKeywords,
+        'visualDescription': visualDescription,
         'isOldDocumentary': !_isNewDocumentary,
       });
 
@@ -430,7 +429,7 @@ class _SubmitScreenState extends State<SubmitScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF2E7D52),
                   disabledBackgroundColor:
-                      const Color(0xFF2E7D52).withOpacity(0.6),
+                      const Color(0xFF2E7D52).withValues(alpha: 0.6),
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),

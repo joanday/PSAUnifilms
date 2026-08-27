@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:google_generative_ai/google_generative_ai.dart';
+import 'package:http/http.dart' as http;
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../env.dart';
 
@@ -122,5 +123,91 @@ Format your response exactly as JSON like this (no markdown tags, just the raw J
       );
     }
     throw Exception('AI returned an empty response.');
+  }
+
+  /// True CBVR: analyzes actual video frames using Gemini Vision.
+  ///
+  /// Fetches 3 auto-generated YouTube frame thumbnails (at ~25%, 50%, 75%
+  /// of the video) and sends them to gemini-2.0-flash as images.
+  /// Gemini Vision then describes the visual content in detail:
+  /// number of people, genders, activities, setting, emotions, objects.
+  ///
+  /// This lets CBVR find films by visual content even when nothing
+  /// is written in the description or summary.
+  static Future<String> generateVisualDescription(String youtubeId) async {
+    try {
+      // YouTube auto-generates 3 frame captures at roughly 25%, 50%, 75%
+      final frameUrls = [
+        'https://img.youtube.com/vi/$youtubeId/1.jpg',
+        'https://img.youtube.com/vi/$youtubeId/2.jpg',
+        'https://img.youtube.com/vi/$youtubeId/3.jpg',
+      ];
+
+      // Fetch all frames in parallel
+      final futures = frameUrls.map((url) => http.get(Uri.parse(url)));
+      final responses = await Future.wait(futures);
+
+      // Build image parts for Gemini Vision (only include successful fetches)
+      final imageParts = <DataPart>[];
+      for (final response in responses) {
+        if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
+          imageParts.add(DataPart('image/jpeg', response.bodyBytes));
+        }
+      }
+
+      if (imageParts.isEmpty) {
+        return 'Visual analysis unavailable: could not fetch video frames.';
+      }
+
+      final model = GenerativeModel(
+        model: 'gemini-2.0-flash',
+        apiKey: _apiKey,
+      );
+
+      const textPrompt = '''
+You are a visual content analyzer for a Philippine university documentary platform.
+You are given frame captures from a documentary video.
+
+Analyze the frames carefully and provide a comprehensive visual description.
+Your description MUST cover ALL of the following aspects that are visible:
+
+1. PEOPLE: How many people appear? Describe their apparent gender, age group, and number.
+   (e.g., "three young women", "two elderly men", "a group of about 10 children")
+2. ACTIONS & ACTIVITIES: What are the people doing? What is happening?
+   (e.g., "bonding and laughing together", "farming rice", "giving a speech")
+3. SETTING & LOCATION: Where does this take place?
+   (e.g., "outdoor farm", "school classroom", "rural barangay", "urban street")
+4. EMOTIONS & MOOD: What emotions or mood is conveyed?
+   (e.g., "joyful and celebratory", "solemn and reflective", "energetic")
+5. NOTABLE OBJECTS or DETAILS: Any specific objects, animals, crops, clothing, or cultural elements?
+
+Write a single detailed paragraph (4-6 sentences) in English.
+Be specific about NUMBERS and GENDERS of people — this is critical for search.
+Do NOT mention that these are video frames or thumbnails.
+Do NOT start with "I" or "The frames show".
+Just describe the visual content directly as if describing the scene.
+''';
+
+      final content = [
+        Content.multi([
+          TextPart(textPrompt),
+          ...imageParts,
+        ])
+      ];
+
+      final response = await model.generateContent(content).timeout(
+        const Duration(seconds: 20),
+        onTimeout: () => throw Exception('Visual analysis timed out.'),
+      );
+
+      final text = response.text;
+      if (text != null && text.trim().isNotEmpty) {
+        return text.trim();
+      }
+      return 'Visual analysis unavailable.';
+    } catch (e) {
+      print('Visual description error: $e');
+      return 'Visual analysis unavailable: $e';
+    }
   }
 }

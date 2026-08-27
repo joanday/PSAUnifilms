@@ -18,6 +18,7 @@ class Film {
   final String aiSummary;
   final List<String> aiKeywords;
   final bool isOldDocumentary;
+  final String visualDescription; // Gemini Vision analysis of actual video content
 
   const Film({
     required this.id,
@@ -37,6 +38,7 @@ class Film {
     this.aiSummary = '',
     this.aiKeywords = const [],
     this.isOldDocumentary = false,
+    this.visualDescription = '',
   });
 
   factory Film.fromFirestore(DocumentSnapshot doc) {
@@ -63,6 +65,7 @@ class Film {
       aiSummary: data['aiSummary'] ?? '',
       aiKeywords: List<String>.from(data['aiKeywords'] ?? []),
       isOldDocumentary: data['isOldDocumentary'] ?? false,
+      visualDescription: data['visualDescription'] ?? '',
     );
   }
 }
