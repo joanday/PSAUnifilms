@@ -42,7 +42,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   List<String> _genres(List<Film> films) => [
         'All',
-        ...films.map((f) => f.genre).toSet().toList(),
+        ...films.map((f) => f.genre).toSet(),
       ];
 
   List<Film> _results(List<Film> films) {

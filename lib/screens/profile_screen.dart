@@ -3,13 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import '../models/film.dart';
 import '../theme/app_theme.dart';
-import 'login_screen.dart';
 import 'account_settings_screen.dart';
 import 'change_password_screen.dart';
-import 'film_detail_screen.dart';
 import 'my_submissions_screen.dart';
 
 class ProfileScreen extends StatefulWidget {

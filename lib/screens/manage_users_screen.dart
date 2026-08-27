@@ -171,7 +171,7 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                           horizontal: 14, vertical: 12),
                       decoration: BoxDecoration(
                         color: role == user.role
-                            ? _roleColor(role).withOpacity(0.15)
+                            ? _roleColor(role).withValues(alpha: 0.15)
                             : _bgCardLight,
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
@@ -278,7 +278,7 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                     decoration: BoxDecoration(
                       color: _bgCard,
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.white.withOpacity(0.08)),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
                     ),
                     child: TextField(
                       onChanged: (v) => setState(() => _search = v),
@@ -356,7 +356,7 @@ class _FilterChip extends StatelessWidget {
           color: selected ? _green : _bgCard,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-              color: selected ? _green : Colors.white.withOpacity(0.1)),
+              color: selected ? _green : Colors.white.withValues(alpha: 0.1)),
         ),
         child: Text(
           label,
@@ -387,7 +387,7 @@ class _UserTile extends StatelessWidget {
         decoration: BoxDecoration(
           color: _bgCard,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withOpacity(0.06)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
         ),
         child: Row(
           children: [
@@ -426,7 +426,7 @@ class _UserTile extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: _roleColor(user.role).withOpacity(0.2),
+                color: _roleColor(user.role).withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Text(_roleLabel(user.role),

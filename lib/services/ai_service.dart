@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:http/http.dart' as http;
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
@@ -51,12 +52,12 @@ class AiService {
               }
             }
           } catch (e) {
-            print('No closed captions found: $e');
+            debugPrint('No closed captions found: $e');
           }
           
           yt.close();
         } catch (e) {
-          print('Error fetching YouTube metadata: $e');
+          debugPrint('Error fetching YouTube metadata: $e');
         }
       }
 
@@ -116,7 +117,7 @@ Format your response exactly as JSON like this (no markdown tags, just the raw J
         }
       }
     } catch (e) {
-      print('API Error: $e');
+      debugPrint('API Error: $e');
       return AiMetadata(
         summary: 'API ERROR: $e',
         keywords: ['Error'],
@@ -160,7 +161,7 @@ Format your response exactly as JSON like this (no markdown tags, just the raw J
       }
 
       final model = GenerativeModel(
-        model: 'gemini-2.0-flash',
+        model: 'gemini-3.6-flash',
         apiKey: _apiKey,
       );
 
@@ -206,7 +207,7 @@ Just describe the visual content directly as if describing the scene.
       }
       return 'Visual analysis unavailable.';
     } catch (e) {
-      print('Visual description error: $e');
+      debugPrint('Visual description error: $e');
       return 'Visual analysis unavailable: $e';
     }
   }

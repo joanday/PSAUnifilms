@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 import 'lib/env.dart';
 
 void main() async {
-  final url = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models?key=\');
+  final url = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models?key=$geminiApiKey');
   final response = await http.get(url);
   if (response.statusCode == 200) {
     final data = jsonDecode(response.body);
@@ -13,7 +13,6 @@ void main() async {
       print(model['name']);
     }
   } else {
-    print('Failed: \');
+    print('Failed: ${response.statusCode} ${response.body}');
   }
 }
-

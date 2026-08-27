@@ -1,4 +1,5 @@
 import 'package:googleapis_auth/auth_io.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -49,14 +50,14 @@ Future<bool> sendApprovalNotification(String filmTitle) async {
     );
 
     if (response.statusCode == 200) {
-      print('✅ Push notification sent successfully via client');
+      debugPrint('✅ Push notification sent successfully via client');
       return true;
     } else {
-      print('❌ Failed to send push notification: ${response.body}');
+      debugPrint('❌ Failed to send push notification: ${response.body}');
       return false;
     }
   } catch (e) {
-    print('❌ Error sending push notification: $e');
+    debugPrint('❌ Error sending push notification: $e');
     return false;
   }
 }
@@ -86,14 +87,14 @@ Future<bool> sendReturnNotification(String uploaderId, String filmTitle, String 
     );
 
     if (response.statusCode == 200) {
-      print('✅ Return notification sent successfully');
+      debugPrint('✅ Return notification sent successfully');
       return true;
     } else {
-      print('❌ Failed to send return notification: ${response.body}');
+      debugPrint('❌ Failed to send return notification: ${response.body}');
       return false;
     }
   } catch (e) {
-    print('❌ Error sending return notification: $e');
+    debugPrint('❌ Error sending return notification: $e');
     return false;
   }
 }

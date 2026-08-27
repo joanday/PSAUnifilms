@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import '../env.dart';
 import '../models/film.dart';
@@ -30,7 +31,7 @@ class CbvrService {
   static Future<List<CbvrResult>> search(
     String query,
     List<Film> films, {
-    int minScore = 30,
+    int minScore = 15,
   }) async {
     if (query.trim().isEmpty || films.isEmpty) return [];
 
@@ -70,17 +71,16 @@ Below is the full list of available films. Each film has:
 Film data:
 ${jsonEncode(filmMetadata)}
 
-Your task is to analyze the user\'s intent and rank ONLY the films that are relevant.
+Your task is to analyze the user's intent and rank ONLY the films that are relevant.
 
 INSTRUCTIONS:
-1. For visual queries (e.g., "three girls bonding", "tatlong babaeng nag b-bonding",
-   "farmers in the field", "children playing"), prioritize matching against the
-   "visualContent" field over text metadata.
-2. Understand both English AND Filipino/Tagalog queries fully.
-3. Assign a relevance score 0–100 (100 = perfect match).
-4. Write a short reason (max 12 words) explaining the match.
-5. Only include films with score >= $minScore.
-6. Sort from highest to lowest score.
+1. Be extremely generous and perform broad semantic matching. For example, if the query is "girl" or "batang ina" (young mother), you MUST include films about women, mothers, female students, or young ladies even if those exact words are missing.
+2. For visual queries (e.g., "three girls bonding", "farmers in the field"), prioritize matching against the "visualContent" field over text metadata.
+3. Understand both English AND Filipino/Tagalog queries fully. "Batang ina" means young mother, "babae" means girl/woman.
+4. Assign a relevance score 0–100 (100 = perfect match).
+5. Write a short reason (max 12 words) explaining the match.
+6. Only include films with score >= $minScore.
+7. Sort from highest to lowest score.
 
 Respond ONLY with raw JSON (no markdown):
 {
@@ -95,7 +95,7 @@ If NO films are relevant, return: {"results": []}
 
     try {
       final model = GenerativeModel(
-        model: 'gemini-2.0-flash',
+        model: 'gemini-3.6-flash',
         apiKey: _apiKey,
       );
 
@@ -132,7 +132,10 @@ If NO films are relevant, return: {"results": []}
       results.sort((a, b) => b.score.compareTo(a.score));
 
       return results;
-    } catch (e) {
+    } catch (e, stack) {
+      // Log the full error so it's visible in the debug console.
+      debugPrint('❌ CbvrService.search error: $e');
+      debugPrint('Stack: $stack');
       // Re-throw so the UI can show a proper error.
       rethrow;
     }

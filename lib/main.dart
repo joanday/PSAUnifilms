@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -26,9 +27,15 @@ void main() async {
   );
 
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-  await NotificationService.initialize();
 
+  // Run app immediately — don't await notification setup so the logo
+  // splash never gets stuck waiting on FCM network calls.
   runApp(const PSAUniFilmsApp());
+
+  // Initialize notifications in the background after the app has launched.
+  unawaited(NotificationService.initialize().catchError(
+    (e) => debugPrint('NotificationService init error: $e'),
+  ));
 }
 
 class PSAUniFilmsApp extends StatelessWidget {

@@ -98,11 +98,13 @@ class _WatchScreenState extends State<WatchScreen> {
           children: qualities
               .map((q) => RadioListTile<String>(
                     value: q,
+                    // ignore: deprecated_member_use
                     groupValue: _videoQuality,
                     activeColor: _greenPrime,
                     title: Text(q,
                         style:
                             const TextStyle(color: Colors.white, fontSize: 14)),
+                    // ignore: deprecated_member_use
                     onChanged: (v) {
                       setState(() => _videoQuality = v!);
                       Navigator.pop(context);
@@ -126,11 +128,13 @@ class _WatchScreenState extends State<WatchScreen> {
           children: languages
               .map((l) => RadioListTile<String>(
                     value: l,
+                    // ignore: deprecated_member_use
                     groupValue: _subtitleLanguage,
                     activeColor: _greenPrime,
                     title: Text(l,
                         style:
                             const TextStyle(color: Colors.white, fontSize: 14)),
+                    // ignore: deprecated_member_use
                     onChanged: (v) {
                       setState(() => _subtitleLanguage = v!);
                       Navigator.pop(context);

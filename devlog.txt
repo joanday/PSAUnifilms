@@ -102,3 +102,13 @@
   - **Firestore Index Fix:** Removed `.orderBy('createdAt', descending: true)` from the Firestore stream and handled chronological sorting locally in Dart (`films.sort((a, b) => b.createdAt.compareTo(a.createdAt))`) to bypass the `FAILED_PRECONDITION` index requirement entirely.
   - **Screen Segregation:** Extracted the visual layout for submissions into a dedicated `MySubmissionsScreen`.
   - **Role Gating:** Nested the access point to this new screen inside the Profile's "Account" section as a menu tile. Dynamically gated this menu tile so it is strictly visible only to users bearing the "CAS Student" role.
+
+### 13. 🤖 CBVR AI Model Upgrade & Semantic Search UI (August 27, 2026)
+- **Problem 1 (Model Error):** The app hit API version mismatches and 'overloaded' errors when attempting to use older models like `gemini-pro` and `gemini-1.5-flash` with the current SDK.
+- **Solution 1:** Migrated `CbvrService` and `AiService` to use `gemini-3.6-flash`, correctly aligning with the supported generative models.
+- **Problem 2 (Hidden Navigation):** The Smart Search screen was practically inaccessible from the new tab structures.
+- **Solution 2:** Embedded ✨ Smart Search directly into the top search bar of the main Home Screens.
+- **Problem 3 (Too Strict CBVR & UI Bug):** Searching implicit concepts like "batang ina" returned 0 results because the AI required exact wording. Also, returning 0 results crashed the UI back to the default home screen.
+- **Solution 3:** 
+  - Adjusted `CbvrService` to lower the minimum threshold (`minScore` = 15) and explicitly instructed the AI prompt to map terms like "girl" or "batang ina" semantically.
+  - Fixed the widget tree in `home_screen.dart` and `student_home_screen.dart` to explicitly handle and display an empty AI results state.

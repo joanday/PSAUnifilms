@@ -42,9 +42,9 @@ class _SubmitFilmScreenState extends State<SubmitFilmScreen> {
   Future<void> _testToken() async {
     try {
       final token = await getAccessToken();
-      print('Access token: $token');
+      debugPrint('Access token: $token');
     } catch (e) {
-      print('Error getting token: $e');
+      debugPrint('Error getting token: $e');
     }
   }
 
@@ -296,7 +296,7 @@ class _SubmitFilmScreenState extends State<SubmitFilmScreen> {
             const Text('Theme', style: TextStyle(color: Colors.white70)),
             const SizedBox(height: 6),
             DropdownButtonFormField<String>(
-              value: _selectedGenre,
+              initialValue: _selectedGenre,
               hint: const Text('Select a Theme', style: TextStyle(color: Colors.white38)),
               dropdownColor: const Color(0xFF1A3528),
               style: const TextStyle(color: Colors.white),
@@ -337,20 +337,24 @@ class _SubmitFilmScreenState extends State<SubmitFilmScreen> {
                 Expanded(
                   child: RadioListTile<bool>(
                     value: true,
+                    // ignore: deprecated_member_use
                     groupValue: _isNewDocumentary,
                     title: const Text('New Documentary', style: TextStyle(color: Colors.white, fontSize: 13)),
                     activeColor: const Color(0xFF4CAF50),
                     contentPadding: EdgeInsets.zero,
+                    // ignore: deprecated_member_use
                     onChanged: (val) => setState(() => _isNewDocumentary = val!),
                   ),
                 ),
                 Expanded(
                   child: RadioListTile<bool>(
                     value: false,
+                    // ignore: deprecated_member_use
                     groupValue: _isNewDocumentary,
                     title: const Text('Old Documentary', style: TextStyle(color: Colors.white, fontSize: 13)),
                     activeColor: const Color(0xFF4CAF50),
                     contentPadding: EdgeInsets.zero,
+                    // ignore: deprecated_member_use
                     onChanged: (val) => setState(() => _isNewDocumentary = val!),
                   ),
                 ),

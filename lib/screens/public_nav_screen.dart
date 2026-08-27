@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
 import 'home_screen.dart';
 import 'watchlist_screen.dart';
-import 'search_screen.dart';
 import 'profile_screen.dart';
 
 class PublicNavScreen extends StatefulWidget {

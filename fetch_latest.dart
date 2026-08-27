@@ -11,14 +11,13 @@ void main() async {
     final snapshot = await FirebaseFirestore.instance.collection('films').orderBy('createdAt', descending: true).limit(1).get();
     if (snapshot.docs.isNotEmpty) {
       final doc = snapshot.docs.first;
-      print('Latest Film: \');
-      print('AI Summary: \');
-      print('AI Keywords: \');
+      print('Latest Film: ${doc.data()}');
+      print('AI Summary: ${doc.data()['aiSummary']}');
+      print('AI Keywords: ${doc.data()['aiKeywords']}');
     } else {
       print('No films found.');
     }
   } catch (e) {
-    print('Error: \');
+    print('Error: $e');
   }
 }
-
