@@ -112,3 +112,14 @@
 - **Solution 3:** 
   - Adjusted `CbvrService` to lower the minimum threshold (`minScore` = 15) and explicitly instructed the AI prompt to map terms like "girl" or "batang ina" semantically.
   - Fixed the widget tree in `home_screen.dart` and `student_home_screen.dart` to explicitly handle and display an empty AI results state.
+
+### 14. 🤖 True Deep Video Search & CBVR (August 31, 2026)
+- **Problem:** The original "Smart Search" relied only on text metadata and the cover photo, meaning the AI had no idea what was actually happening inside the video. We needed to fulfill Objective 3 to the highest academic standard.
+- **Solution:** Moved the heavy AI processing to a secure Node.js Cloud Function and implemented Firestore Vector Search.
+- **Code Changes:**
+  - **`generateCBVRMetadata` (Cloud Function):** Uses the `google/genai` SDK and Gemini 1.5 Pro to download and watch the full MP4 video from Bunny.net. It automatically generates a `transcriptSummary`, `scenes`, `detectedObjects`, `thematicMeaning`, and `searchKeywords`.
+  - **Multilingual Support:** Explicitly engineered the AI prompt to detect the primary spoken language of the documentary and write the summary in that exact language. Forced the generation of keywords in a mix of English, Tagalog, and Kapampangan to natively support regional search queries.
+  - **Vector Embedding:** Passes the generated JSON metadata through Google's `text-embedding-004` model to convert the video's conceptual meaning into a mathematical Vector array, stored directly in Firestore.
+  - **`searchFilmsCBVR` (Cloud Function):** Takes a natural language user query (e.g., "mga batang naglalaro"), converts it into a vector, and uses Firestore's `findNearest` vector similarity search to return the most conceptually relevant films.
+  - **UI Integration:** Built `CbvrSearchScreen` and linked it via a "Deep Video Search" button on `search_screen.dart`, ensuring the user's local "Smart Search" fallback remained intact. 
+  - **Billing Resolution:** Guided the setup of the Firebase Blaze (Pay-as-you-go) plan using a GCash/Maya virtual card to unlock Cloud Function execution.

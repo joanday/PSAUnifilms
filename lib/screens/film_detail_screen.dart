@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../theme/app_theme.dart';
 import '../models/film.dart';
 import '../widgets/custom_video_player.dart';
 import '../services/ai_service.dart';
+import '../services/bunny_service.dart';
 
 class FilmDetailScreen extends StatefulWidget {
   final Film film;
@@ -18,6 +20,10 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
   bool _loadingWatchlist = true;
   bool _isRegeneratingAi = false;
   bool _isRegeneratingVisual = false;
+  final GlobalKey _videoPlayerKey = GlobalKey();
+  
+  int? _videoStatus;
+  bool _checkingStatus = true;
 
   Future<void> _regenerateAi() async {
     setState(() => _isRegeneratingAi = true);
@@ -25,7 +31,6 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
       final aiData = await AiService.generateMetadata(
         widget.film.title,
         widget.film.description,
-        youtubeId: widget.film.youtubeId ?? '',
       );
       await FirebaseFirestore.instance.collection('films').doc(widget.film.id).update({
         'aiSummary': aiData.summary,
@@ -50,9 +55,18 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
   Future<void> _regenerateVisual() async {
     setState(() => _isRegeneratingVisual = true);
     try {
-      final youtubeId = widget.film.youtubeId ?? '';
-      if (youtubeId.isEmpty) throw Exception('No YouTube video linked.');
-      final visualDesc = await AiService.generateVisualDescription(youtubeId);
+      final videoUrl = widget.film.videoUrl;
+      if (videoUrl.isEmpty) throw Exception('No video linked.');
+
+      // Try to construct thumbnail URL
+      String thumbnailUrl = videoUrl;
+      if (thumbnailUrl.contains('/video.m3u8')) {
+        thumbnailUrl = thumbnailUrl.replaceAll('/video.m3u8', '/thumbnail.jpg');
+      } else if (thumbnailUrl.contains('/play.m3u8')) {
+        thumbnailUrl = thumbnailUrl.replaceAll('/play.m3u8', '/thumbnail.jpg');
+      }
+
+      final visualDesc = await AiService.generateVisualDescription(thumbnailUrl);
       await FirebaseFirestore.instance
           .collection('films')
           .doc(widget.film.id)
@@ -86,6 +100,33 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
   void initState() {
     super.initState();
     _checkWatchlist();
+    _checkVideoStatus();
+  }
+
+  Future<void> _checkVideoStatus() async {
+    if (widget.film.videoUrl.isEmpty) {
+      setState(() => _checkingStatus = false);
+      return;
+    }
+    
+    try {
+      final uri = Uri.parse(widget.film.videoUrl);
+      final segments = uri.pathSegments;
+      if (segments.length >= 2) {
+        final guid = segments[segments.length - 2];
+        final status = await BunnyService.getVideoStatus(guid);
+        if (mounted) {
+          setState(() {
+            _videoStatus = status;
+            _checkingStatus = false;
+          });
+        }
+      } else {
+        setState(() => _checkingStatus = false);
+      }
+    } catch (e) {
+      if (mounted) setState(() => _checkingStatus = false);
+    }
   }
 
   Future<void> _checkWatchlist() async {
@@ -116,7 +157,6 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
           'rating': widget.film.rating,
           'description': widget.film.description,
           'videoUrl': widget.film.videoUrl,
-          'youtubeId': widget.film.youtubeId ?? '',
           'thumbnailUrl': widget.film.thumbnailUrl,
           'uploadedBy': widget.film.uploadedBy,
           'uploaderName': widget.film.uploaderName,
@@ -137,21 +177,13 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.bgDark,
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          children: [
-            _buildHeader(),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Title
-                    Row(
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+
+    Widget content = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Title
+        Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
@@ -480,8 +512,27 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
                       },
                     ),
                     const SizedBox(height: 24),
-                  ],
-                ),
+      ],
+    );
+
+    if (isLandscape) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: _buildHeader(isLandscape),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: AppTheme.bgDark,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            _buildHeader(isLandscape),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: content,
               ),
             ),
           ],
@@ -490,17 +541,43 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
     );
   }
 
-  Widget _buildHeader() {
-    final hasVideo = widget.film.youtubeId != null && widget.film.youtubeId!.isNotEmpty;
+  Widget _buildHeader(bool isLandscape) {
+    final hasVideo = widget.film.videoUrl.isNotEmpty;
 
     return Stack(
       children: [
         if (hasVideo)
-          CustomVideoPlayer(
-            youtubeId: widget.film.youtubeId!,
-            autoPlay: false,
-            isFullScreenButtonVisible: true,
-          )
+          if (_checkingStatus)
+            AspectRatio(
+              aspectRatio: 16 / 9,
+              child: Container(
+                color: Colors.black,
+                child: const Center(child: CircularProgressIndicator(color: AppTheme.greenPrime)),
+              ),
+            )
+          else if (_videoStatus != null && _videoStatus! < 3)
+            AspectRatio(
+              aspectRatio: 16 / 9,
+              child: Container(
+                color: Colors.black,
+                child: const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.hourglass_empty, color: Colors.white70, size: 40),
+                      SizedBox(height: 12),
+                      Text('Video is processing on the server...', style: TextStyle(color: Colors.white70)),
+                      Text('Please check back in a few minutes.', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          else
+            CustomVideoPlayer(
+              key: _videoPlayerKey,
+              videoUrl: widget.film.videoUrl,
+            )
         else
           AspectRatio(
             aspectRatio: 16 / 9,
@@ -523,16 +600,24 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
             ),
           ),
         Positioned(
-          top: 8,
-          left: 8,
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.4),
-              shape: BoxShape.circle,
-            ),
-            child: IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
-              onPressed: () => Navigator.pop(context),
+          top: isLandscape ? 16 : 8,
+          left: isLandscape ? 24 : 8,
+          child: SafeArea(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.4),
+                shape: BoxShape.circle,
+              ),
+              child: IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
+                onPressed: () {
+                  if (isLandscape) {
+                    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+                  } else {
+                    Navigator.pop(context);
+                  }
+                },
+              ),
             ),
           ),
         ),

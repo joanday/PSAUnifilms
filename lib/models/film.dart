@@ -10,7 +10,6 @@ class Film {
   final String thumbnailUrl;
   final String description;
   final String videoUrl;
-  final String? youtubeId; // ← added
   final String uploadedBy;
   final String uploaderName;
   final DateTime? createdAt;
@@ -30,7 +29,6 @@ class Film {
     required this.thumbnailUrl,
     required this.description,
     required this.videoUrl,
-    this.youtubeId,
     this.uploadedBy = '',
     this.uploaderName = '',
     this.createdAt,
@@ -57,7 +55,6 @@ class Film {
       thumbnailUrl: data['thumbnail'] ?? data['thumbnailUrl'] ?? '',
       description: data['description'] ?? '',
       videoUrl: data['videoUrl'] ?? '',
-      youtubeId: data['youtubeId'],
       uploadedBy: data['uploadedBy'] ?? '',
       uploaderName: data['uploaderName'] ?? 'Student',
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),

@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:http/http.dart' as http;
-import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../env.dart';
 
 class AiMetadata {
@@ -16,50 +15,12 @@ class AiService {
   // Loaded from env.dart to protect secrets from GitHub
   static const String _apiKey = geminiApiKey;
 
-  static Future<AiMetadata> generateMetadata(String title, String description, {String? youtubeId}) async {
+  static Future<AiMetadata> generateMetadata(String title, String description) async {
     try {
       final model = GenerativeModel(
         model: 'gemini-3.6-flash',
         apiKey: _apiKey,
       );
-
-      String actualTitle = title;
-      String actualDescription = description;
-      String transcriptText = "No transcript available.";
-
-      if (youtubeId != null && youtubeId.isNotEmpty) {
-        try {
-          final yt = YoutubeExplode();
-          final video = await yt.videos.get(youtubeId);
-          actualTitle = video.title;
-          actualDescription = video.description;
-          
-          try {
-            final manifest = await yt.videos.closedCaptions.getManifest(youtubeId);
-            if (manifest.tracks.isNotEmpty) {
-              // Prioritize Tagalog/Filipino/English, otherwise grab the first available
-              final trackInfo = manifest.getByLanguage('tl').firstOrNull ?? 
-                                manifest.getByLanguage('fil').firstOrNull ?? 
-                                manifest.getByLanguage('en').firstOrNull ?? 
-                                manifest.tracks.first;
-                                
-              final track = await yt.videos.closedCaptions.get(trackInfo);
-              transcriptText = track.captions.map((e) => e.text).join(' ');
-              
-              // Truncate to avoid exceeding token limits
-              if (transcriptText.length > 30000) {
-                transcriptText = '${transcriptText.substring(0, 30000)}... (truncated)';
-              }
-            }
-          } catch (e) {
-            debugPrint('No closed captions found: $e');
-          }
-          
-          yt.close();
-        } catch (e) {
-          debugPrint('Error fetching YouTube metadata: $e');
-        }
-      }
 
       final prompt = '''
 You are an expert AI video analysis tool for a university documentary platform in the Philippines.
@@ -69,21 +30,9 @@ The user provided the following details:
 Title: "$title"
 Description: "$description"
 
-We also pulled the exact metadata and transcript from YouTube for this video:
-Actual YouTube Title: "$actualTitle"
-Actual YouTube Description: "$actualDescription"
-
-VIDEO TRANSCRIPT / CAPTIONS:
-"""
-$transcriptText
-"""
-
 IMPORTANT INSTRUCTIONS:
-1. The transcript may be in Tagalog, Kapampangan, or English. You are fully capable of understanding these languages.
-2. If a transcript is available, rely on it to understand what the video is about.
-3. If the transcript says "No transcript available.", DO NOT write an error message or complain about missing data. Instead, generate the best possible professional summary and keywords based purely on the Title and Description. Under NO circumstances should you say a summary cannot be generated.
-4. Generate a highly professional, accurate summary (3-4 sentences max) in ENGLISH describing the true themes, cultural relevance, and potential impact of this documentary based on its spoken content.
-5. Generate a list of 5 to 8 highly relevant searchable keywords/tags (these can be English, Tagalog, or Kapampangan) that describe the actual concepts discussed in the video.
+1. Generate a highly professional, accurate summary (3-4 sentences max) in ENGLISH describing the true themes, cultural relevance, and potential impact of this documentary based on its title and description.
+2. Generate a list of 5 to 8 highly relevant searchable keywords/tags (these can be English, Tagalog, or Kapampangan) that describe the actual concepts discussed.
 
 Format your response exactly as JSON like this (no markdown tags, just the raw JSON):
 {
@@ -127,38 +76,17 @@ Format your response exactly as JSON like this (no markdown tags, just the raw J
   }
 
   /// True CBVR: analyzes actual video frames using Gemini Vision.
-  ///
-  /// Fetches 3 auto-generated YouTube frame thumbnails (at ~25%, 50%, 75%
-  /// of the video) and sends them to gemini-2.0-flash as images.
-  /// Gemini Vision then describes the visual content in detail:
-  /// number of people, genders, activities, setting, emotions, objects.
-  ///
-  /// This lets CBVR find films by visual content even when nothing
-  /// is written in the description or summary.
-  static Future<String> generateVisualDescription(String youtubeId) async {
+  static Future<String> generateVisualDescription(String thumbnailUrl) async {
+    if (thumbnailUrl.isEmpty) return 'Visual analysis unavailable: no thumbnail provided.';
+    
     try {
-      // YouTube auto-generates 3 frame captures at roughly 25%, 50%, 75%
-      final frameUrls = [
-        'https://img.youtube.com/vi/$youtubeId/1.jpg',
-        'https://img.youtube.com/vi/$youtubeId/2.jpg',
-        'https://img.youtube.com/vi/$youtubeId/3.jpg',
-      ];
+      final response = await http.get(Uri.parse(thumbnailUrl));
 
-      // Fetch all frames in parallel
-      final futures = frameUrls.map((url) => http.get(Uri.parse(url)));
-      final responses = await Future.wait(futures);
-
-      // Build image parts for Gemini Vision (only include successful fetches)
-      final imageParts = <DataPart>[];
-      for (final response in responses) {
-        if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
-          imageParts.add(DataPart('image/jpeg', response.bodyBytes));
-        }
+      if (response.statusCode != 200 || response.bodyBytes.isEmpty) {
+        return 'Visual analysis unavailable: could not fetch thumbnail.';
       }
 
-      if (imageParts.isEmpty) {
-        return 'Visual analysis unavailable: could not fetch video frames.';
-      }
+      final imagePart = DataPart('image/jpeg', response.bodyBytes);
 
       final model = GenerativeModel(
         model: 'gemini-3.6-flash',
@@ -167,9 +95,9 @@ Format your response exactly as JSON like this (no markdown tags, just the raw J
 
       const textPrompt = '''
 You are a visual content analyzer for a Philippine university documentary platform.
-You are given frame captures from a documentary video.
+You are given a frame capture from a documentary video.
 
-Analyze the frames carefully and provide a comprehensive visual description.
+Analyze the frame carefully and provide a comprehensive visual description.
 Your description MUST cover ALL of the following aspects that are visible:
 
 1. PEOPLE: How many people appear? Describe their apparent gender, age group, and number.
@@ -192,16 +120,16 @@ Just describe the visual content directly as if describing the scene.
       final content = [
         Content.multi([
           TextPart(textPrompt),
-          ...imageParts,
+          imagePart,
         ])
       ];
 
-      final response = await model.generateContent(content).timeout(
+      final aiResponse = await model.generateContent(content).timeout(
         const Duration(seconds: 20),
         onTimeout: () => throw Exception('Visual analysis timed out.'),
       );
 
-      final text = response.text;
+      final text = aiResponse.text;
       if (text != null && text.trim().isNotEmpty) {
         return text.trim();
       }

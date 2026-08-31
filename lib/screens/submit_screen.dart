@@ -1,10 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import '../widgets/custom_video_player.dart';
-import 'package:youtube_player_flutter/youtube_player_flutter.dart' show YoutubePlayer;
 import '../services/ai_service.dart';
+import '../services/bunny_service.dart';
 
 class SubmitScreen extends StatefulWidget {
   const SubmitScreen({super.key});
@@ -17,12 +19,14 @@ class _SubmitScreenState extends State<SubmitScreen> {
   final _titleController = TextEditingController();
   final _directorController = TextEditingController();
   final _descController = TextEditingController();
-  final _youtubeLinkController = TextEditingController();
+  
+  PlatformFile? _selectedVideoFile;
+  PlatformFile? _selectedCoverPhoto;
+
   bool _isLoading = false;
   String _loadingText = '';
   int _loadingPercentage = 0;
   Timer? _progressTimer;
-  String? _previewId;
   bool _isNewDocumentary = true;
 
   String? _selectedGenre;
@@ -39,32 +43,45 @@ class _SubmitScreenState extends State<SubmitScreen> {
     _titleController.dispose();
     _directorController.dispose();
     _descController.dispose();
-    _youtubeLinkController.dispose();
+    _progressTimer?.cancel();
     super.dispose();
   }
 
-  void _previewVideo() {
-    final id = YoutubePlayer.convertUrlToId(
-      _youtubeLinkController.text.trim(),
+  Future<void> _pickVideo() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.video,
+      allowMultiple: false,
+      withData: false, // Don't load entire file into memory
     );
-    setState(() => _previewId = id);
 
-    if (id == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Invalid YouTube link. Please try again.')),
-      );
+    if (result != null && result.files.isNotEmpty) {
+      setState(() {
+        _selectedVideoFile = result.files.first;
+      });
     }
   }
 
+  Future<void> _pickCoverPhoto() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      allowMultiple: false,
+      withData: false,
+    );
+
+    if (result != null && result.files.isNotEmpty) {
+      setState(() {
+        _selectedCoverPhoto = result.files.first;
+      });
+    }
+  }
 
   void _resetForm() {
     _titleController.clear();
     _directorController.clear();
     _descController.clear();
-    _youtubeLinkController.clear();
     setState(() {
-      _previewId = null;
+      _selectedVideoFile = null;
+      _selectedCoverPhoto = null;
       _selectedGenre = null;
     });
   }
@@ -73,15 +90,11 @@ class _SubmitScreenState extends State<SubmitScreen> {
     final title = _titleController.text.trim();
     final director = _directorController.text.trim();
     final desc = _descController.text.trim();
-    final youtubeId = YoutubePlayer.convertUrlToId(
-      _youtubeLinkController.text.trim(),
-    );
 
-    // Description is now optional
-    if (title.isEmpty || director.isEmpty || youtubeId == null) {
+    if (title.isEmpty || director.isEmpty || _selectedVideoFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please fill all required fields (Title, Director, YouTube URL).'),
+          content: Text('Please fill all required fields (Title, Director, Video File).'),
         ),
       );
       return;
@@ -102,44 +115,61 @@ class _SubmitScreenState extends State<SubmitScreen> {
       _loadingPercentage = 0;
     });
 
-    _progressTimer = Timer.periodic(const Duration(milliseconds: 150), (timer) {
-      if (mounted && _loadingPercentage < 95) {
-        setState(() {
-          _loadingPercentage++;
-        });
-      }
-    });
-
     try {
-      // Since Firebase Storage is disabled, we rely solely on YouTube thumbnails.
-      String thumbnailUrl = 'https://img.youtube.com/vi/$youtubeId/hqdefault.jpg';
+      // 1. Create Video Object in Bunny Stream
+      setState(() => _loadingText = 'Creating video in Bunny.net...');
+      final guid = await BunnyService.createVideoObject(title);
 
+      // 2. Upload Video Bytes using TUS
+      setState(() => _loadingText = 'Uploading video file...');
+      await BunnyService.uploadVideo(
+        guid, 
+        _selectedVideoFile!,
+        onProgress: (progress) {
+          if (mounted) {
+            setState(() {
+              _loadingPercentage = progress.toInt();
+            });
+          }
+        },
+      );
+
+      // 3. Construct URLs and Upload Cover Photo (if selected)
+      final videoUrl = BunnyService.getDirectPlayUrl(guid);
+      String thumbnailUrl = BunnyService.getThumbnailUrl(guid);
+
+      if (_selectedCoverPhoto != null && _selectedCoverPhoto!.path != null) {
+        setState(() => _loadingText = 'Uploading cover photo to Bunny.net...');
+        final coverFile = File(_selectedCoverPhoto!.path!);
+        if (!await coverFile.exists()) {
+          throw Exception("Selected cover photo file does not exist on device.");
+        }
+        
+        await BunnyService.uploadThumbnail(guid, coverFile);
+      }
+
+      // 4. Generate AI Metadata
       setState(() {
         _loadingText = 'Generating AI Metadata...';
       });
 
       String aiSummary = '';
       List<String> aiKeywords = [];
-
       try {
-        final aiData = await AiService.generateMetadata(
-          title,
-          desc,
-          youtubeId: youtubeId,
-        );
+        final aiData = await AiService.generateMetadata(title, desc);
         aiSummary = aiData.summary;
         aiKeywords = aiData.keywords;
       } catch (aiError) {
         aiSummary = 'AI Generation Failed: $aiError. Tap to retry.';
       }
 
-      // ── True CBVR: Gemini Vision analyzes actual video frames ──
+      // 5. Visual Description (CBVR)
       setState(() {
         _loadingText = 'Analyzing video content (CBVR)...';
       });
       String visualDescription = '';
       try {
-        visualDescription = await AiService.generateVisualDescription(youtubeId);
+        visualDescription = await AiService.generateVisualDescription(thumbnailUrl);
       } catch (_) {
         visualDescription = '';
       }
@@ -156,8 +186,8 @@ class _SubmitScreenState extends State<SubmitScreen> {
         'description': desc,
         'genre': _selectedGenre,
         'year': DateTime.now().year,
-        'youtubeId': youtubeId,
-        'thumbnail': thumbnailUrl,
+        'videoUrl': videoUrl,
+        'thumbnailUrl': thumbnailUrl,
         'uploadedBy': FirebaseAuth.instance.currentUser?.uid,
         'uploaderName': FirebaseAuth.instance.currentUser?.email?.split('@')[0],
         'status': 'pending',
@@ -365,41 +395,90 @@ class _SubmitScreenState extends State<SubmitScreen> {
             ),
             const SizedBox(height: 16),
 
-            // YouTube Link Field
-            const Text('YouTube URL', style: TextStyle(color: Colors.white70)),
+            // Video File Picker
+            const Text('Video File', style: TextStyle(color: Colors.white70)),
             const SizedBox(height: 6),
-            TextField(
-              controller: _youtubeLinkController,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: 'https://www.youtube.com/watch?v=...',
-                hintStyle: const TextStyle(color: Colors.white38),
-                filled: true,
-                fillColor: const Color(0xFF1A3528),
-                prefixIcon: const Icon(Icons.link, color: Colors.white38),
-                suffixIcon: TextButton(
-                  onPressed: _previewVideo,
-                  child: const Text('Preview',
-                      style: TextStyle(color: Color(0xFF4CAF50))),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF4CAF50),
+                      side: const BorderSide(color: Color(0xFF2E5C3E)),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: _pickVideo,
+                    icon: const Icon(Icons.video_library_rounded),
+                    label: Text(_selectedVideoFile != null
+                        ? 'Video Selected: ${_selectedVideoFile!.name}'
+                        : 'Select Video File'),
+                  ),
                 ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: Color(0xFF2E5C3E)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: Color(0xFF2E5C3E)),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: Color(0xFF4CAF50)),
-                ),
-              ),
+              ],
             ),
             const SizedBox(height: 16),
 
+            // Cover Photo Picker (Optional)
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: Color(0xFF2E5C3E)),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: _pickCoverPhoto,
+                    icon: const Icon(Icons.image_outlined),
+                    label: Text(_selectedCoverPhoto != null
+                        ? 'Cover Photo: ${_selectedCoverPhoto!.name}'
+                        : 'Select Cover Photo (Optional)'),
+                  ),
+                ),
+              ],
+            ),
+
+            if (_selectedCoverPhoto != null && _selectedCoverPhoto!.path != null) ...[
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Cover Photo Preview:',
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: Colors.white)),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.redAccent),
+                    onPressed: () {
+                      setState(() {
+                        _selectedCoverPhoto = null;
+                      });
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.file(
+                  File(_selectedCoverPhoto!.path!),
+                  width: double.infinity,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 24),
+
             // Video Preview
-            if (_previewId != null) ...[
+            if (_selectedVideoFile != null && _selectedVideoFile!.path != null) ...[
               const Text('Preview:',
                   style: TextStyle(
                       fontWeight: FontWeight.bold,
@@ -407,11 +486,14 @@ class _SubmitScreenState extends State<SubmitScreen> {
                       color: Colors.white)),
               const SizedBox(height: 8),
               CustomVideoPlayer(
-                youtubeId: _previewId!,
+                key: ValueKey(_selectedVideoFile!.path),
+                videoFile: File(_selectedVideoFile!.path!),
                 autoPlay: false,
               ),
               const SizedBox(height: 16),
             ],
+
+            const SizedBox(height: 8),
 
             // Submit Button
             SizedBox(

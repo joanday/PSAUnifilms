@@ -5,6 +5,7 @@ import '../models/film.dart';
 import '../services/cbvr_service.dart';
 import '../widgets/cbvr_result_card.dart';
 import 'film_detail_screen.dart';
+import 'cbvr_search_screen.dart';
 
 class SearchScreen extends StatefulWidget {
   final String initialGenre;
@@ -249,35 +250,87 @@ class _SearchScreenState extends State<SearchScreen> {
                     // "Search" button (only shown in Smart Search mode)
                     if (_smartSearchEnabled) ...[
                       Expanded(
-                        child: AnimatedOpacity(
-                          opacity: _query.trim().isNotEmpty ? 1.0 : 0.4,
-                          duration: const Duration(milliseconds: 200),
+                        child: Align(
+                          alignment: Alignment.centerRight,
                           child: GestureDetector(
-                            onTap: _query.trim().isNotEmpty
-                                ? () => _runSmartSearch(allFilms)
-                                : null,
-                            child: Container(
+                            onTap: () {
+                              if (allFilms.isEmpty || _query.trim().isEmpty) return;
+                              FocusScope.of(context).unfocus();
+                              _runSmartSearch(allFilms);
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 14, vertical: 6),
+                                  horizontal: 16, vertical: 6),
                               decoration: BoxDecoration(
-                                color: const Color(0xFF4CAF50),
+                                color: _cbvrLoading || _query.trim().isEmpty
+                                    ? Colors.white12
+                                    : const Color(0xFF4CAF50),
                                 borderRadius: BorderRadius.circular(20),
                               ),
-                              child: const Center(
-                                child: Text(
-                                  'Search with AI',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
+                              child: _cbvrLoading
+                                  ? const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                                Colors.white54),
+                                      ),
+                                    )
+                                  : const Text(
+                                      'Search',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
                             ),
                           ),
                         ),
                       ),
                     ] else ...[
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: GestureDetector(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const CbvrSearchScreen(),
+                                ),
+                              );
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.blueAccent.withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: Colors.blueAccent),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.video_library, size: 13, color: Colors.blueAccent),
+                                  SizedBox(width: 5),
+                                  Text(
+                                    'Deep Video Search',
+                                    style: TextStyle(
+                                      color: Colors.blueAccent,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
                       // Powered by hint
                       Expanded(
                         child: Text(

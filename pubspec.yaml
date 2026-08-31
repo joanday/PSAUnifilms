@@ -14,7 +14,6 @@ dependencies:
   firebase_messaging: ^16.0.2
   flutter_local_notifications: ^18.0.1
 
-  youtube_player_flutter: ^9.1.1
   video_player: ^2.8.1
   cached_network_image: ^3.3.0
   shared_preferences: ^2.2.2
@@ -25,10 +24,16 @@ dependencies:
   googleapis_auth: ^2.3.3
   http: ^1.6.0
   google_generative_ai: any
-  youtube_explode_dart: ^3.1.0
+  youtube_player_iframe: ^5.1.2
   chewie: ^1.13.1
   firebase_storage: ^13.4.6
-
+  url_launcher: ^6.3.2
+  youtube_explode_dart: ^3.1.0
+  webview_flutter: ^4.14.1
+  tus_client_dart: ^2.5.0
+  crypto: ^3.0.7
+  cloud_functions: ^6.4.0
+  cross_file: ^0.3.5+5
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -76,11 +76,12 @@ Your task is to analyze the user's intent and rank ONLY the films that are relev
 INSTRUCTIONS:
 1. Be extremely generous and perform broad semantic matching. For example, if the query is "girl" or "batang ina" (young mother), you MUST include films about women, mothers, female students, or young ladies even if those exact words are missing.
 2. For visual queries (e.g., "three girls bonding", "farmers in the field"), prioritize matching against the "visualContent" field over text metadata.
-3. Understand both English AND Filipino/Tagalog queries fully. "Batang ina" means young mother, "babae" means girl/woman.
-4. Assign a relevance score 0–100 (100 = perfect match).
-5. Write a short reason (max 12 words) explaining the match.
-6. Only include films with score >= $minScore.
-7. Sort from highest to lowest score.
+3. CROSS-LINGUAL MATCHING: If the query is in Tagalog/Filipino, you MUST translate its meaning and match it against the English metadata. For example, if the user searches "batang ina", you MUST find and return films about "young mothers", "teenage pregnancy", "women", or "girls" with a high score. Do NOT return an empty list if there are conceptually related films!
+4. Be EXTREMELY generous with scoring. If there is even a slight thematic, conceptual, or visual link to the translated query (e.g. "babae" -> any film featuring female subjects), give it a score above 50.
+5. Assign a relevance score 0–100 (100 = perfect match).
+6. Write a short reason (max 12 words) explaining the match.
+7. Only include films with score >= $minScore.
+8. Sort from highest to lowest score.
 
 Respond ONLY with raw JSON (no markdown):
 {
@@ -136,6 +137,12 @@ If NO films are relevant, return: {"results": []}
       // Log the full error so it's visible in the debug console.
       debugPrint('❌ CbvrService.search error: $e');
       debugPrint('Stack: $stack');
+      
+      // Provide a user-friendly error for rate limits (Quota exceeded)
+      if (e.toString().contains('Quota exceeded') || e.toString().contains('429')) {
+        throw Exception('Smart Search is currently busy due to high traffic. Please wait a few seconds and try again.');
+      }
+      
       // Re-throw so the UI can show a proper error.
       rethrow;
     }

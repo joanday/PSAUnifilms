@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import '../widgets/custom_video_player.dart';
 
 class WatchScreen extends StatefulWidget {
-  final String youtubeId;
+  final String videoUrl;
   final String title;
   final String description;
 
   const WatchScreen({
     super.key,
-    required this.youtubeId,
+    required this.videoUrl,
     required this.title,
     required this.description,
   });
@@ -170,7 +170,7 @@ class _WatchScreenState extends State<WatchScreen> {
         children: [
           // Custom Clean Native Video Player
           CustomVideoPlayer(
-            youtubeId: widget.youtubeId,
+            videoUrl: widget.videoUrl,
             autoPlay: true,
           ),
 

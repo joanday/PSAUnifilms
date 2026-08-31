@@ -74,7 +74,7 @@ class _ShowcaseBannerState extends State<ShowcaseBanner> {
   Widget build(BuildContext context) {
     if (widget.films.isEmpty) return const SizedBox.shrink();
 
-    final hasVideo = _currentFilm.youtubeId != null && _currentFilm.youtubeId!.isNotEmpty;
+    final hasVideo = _currentFilm.videoUrl.isNotEmpty;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
@@ -82,8 +82,8 @@ class _ShowcaseBannerState extends State<ShowcaseBanner> {
         aspectRatio: 16 / 9,
         child: hasVideo
             ? CustomVideoPlayer(
-                key: ValueKey(_currentFilm.youtubeId),
-                youtubeId: _currentFilm.youtubeId!,
+                key: ValueKey(_currentFilm.videoUrl),
+                videoUrl: _currentFilm.videoUrl,
                 autoPlay: true,
                 mute: true,
                 disableControls: true,
