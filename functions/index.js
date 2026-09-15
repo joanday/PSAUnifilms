@@ -1,3 +1,6 @@
+// Force redeploy - SDK upgrade to @google/genai@latest
+// redeploy-trigger-v2
+
 const {onDocumentUpdated, onDocumentCreated} = require("firebase-functions/v2/firestore");
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
 const {initializeApp} = require("firebase-admin/app");
@@ -8,16 +11,14 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { GoogleGenAI } = require("@google/genai");
+const { defineSecret } = require("firebase-functions/params");
 
 initializeApp();
 
 const db = getFirestore();
-// Loaded from flutter env.dart for simplicity in this project
-const GEMINI_API_KEY = "REMOVED_SECRET";
 
-// ⚠️ TODO: move this to Firebase secrets before your next deploy:
-//   firebase functions:secrets:set GEMINI_API_KEY
-// then read it via defineSecret() instead of hardcoding it here.
+// Reads the value you stored with: firebase functions:secrets:set PSAUNIFILMS
+const geminiApiKeySecret = defineSecret("PSAUNIFILMS");
 
 // ✅ FIX: ONE embedding model used everywhere in this file.
 // We strictly use "gemini-embedding-2" to ensure vector compatibility
@@ -28,7 +29,7 @@ const EMBEDDING_DIMENSION = 768;
 // Lazy-initialize AI client to avoid deployment timeout during module analysis
 let _ai = null;
 function getAI() {
-    if (!_ai) _ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+    if (!_ai) _ai = new GoogleGenAI({ apiKey: geminiApiKeySecret.value() });
     return _ai;
 }
 
@@ -164,7 +165,7 @@ async function processCBVR(filmId, filmData) {
         
         // Initiate resumable upload
         const initUpload = await axios.post(
-            `${GEMINI_BASE}/upload/v1beta/files?key=${GEMINI_API_KEY}`,
+            `${GEMINI_BASE}/upload/v1beta/files?key=${geminiApiKeySecret.value()}`,
             { file: { display_name: `film_${filmId}` } },
             {
                 headers: {
@@ -220,7 +221,7 @@ async function processCBVR(filmId, filmData) {
         while (fileState === "PROCESSING") {
             await new Promise(r => setTimeout(r, 5000));
             const statusResp = await axios.get(
-                `${GEMINI_BASE}/v1beta/${fileName}?key=${GEMINI_API_KEY}`
+                `${GEMINI_BASE}/v1beta/${fileName}?key=${geminiApiKeySecret.value()}`
             );
             fileState = statusResp.data?.state;
             console.log(`File state: ${fileState}`);
@@ -386,7 +387,7 @@ Scene-by-Scene: ${allSceneDescriptions}
 
 // Objective 3: Generate CBVR Metadata
 exports.generateCBVRMetadata = onDocumentCreated(
-    { document: "films/{filmId}", timeoutSeconds: 540, memory: "4GiB" },
+    { document: "films/{filmId}", timeoutSeconds: 540, memory: "4GiB", secrets: [geminiApiKeySecret] },
     async (event) => {
         const filmData = event.data.data();
         const filmId = event.params.filmId;
@@ -405,7 +406,7 @@ exports.generateCBVRMetadata = onDocumentCreated(
 
 // Manual retry endpoint
 exports.retryCBVRMetadata = onCall(
-    { timeoutSeconds: 3600, memory: "4GiB" },
+    { timeoutSeconds: 3600, memory: "4GiB", secrets: [geminiApiKeySecret] },
     async (request) => {
         const filmId = request.data.filmId;
         if (!filmId) throw new HttpsError("invalid-argument", "Missing filmId.");
@@ -446,7 +447,7 @@ exports.retryCBVRMetadata = onCall(
 );
 
 // Objective 3: Semantic Vector Search Endpoint
-exports.searchFilmsCBVR = onCall(async (request) => {
+exports.searchFilmsCBVR = onCall({ secrets: [geminiApiKeySecret] }, async (request) => {
     const queryText = request.data.query;
     if (!queryText) throw new HttpsError("invalid-argument", "Missing query.");
     
@@ -497,7 +498,7 @@ exports.searchFilmsCBVR = onCall(async (request) => {
 // ⚠️ Run this ONCE after deploying the fix above, so existing films get
 // re-embedded with the correct (matching) EMBEDDING_MODEL.
 exports.reembedAllFilms = onCall(
-    { timeoutSeconds: 540, memory: "1GiB" },
+    { timeoutSeconds: 540, memory: "1GiB", secrets: [geminiApiKeySecret] },
     async (request) => {
         const snapshot = await db.collection("films")
             .where("cbvrStatus", "==", "completed")
