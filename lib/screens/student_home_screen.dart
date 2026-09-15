@@ -1,11 +1,14 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/film.dart';
 import '../services/cbvr_service.dart';
 import '../widgets/cbvr_result_card.dart';
 import '../widgets/showcase_banner.dart';
+import '../widgets/user_avatar.dart';
 import 'film_detail_screen.dart';
 import 'search_screen.dart';
+import 'theme_films_screen.dart';
 
 class StudentHomeScreen extends StatefulWidget {
   const StudentHomeScreen({super.key});
@@ -19,11 +22,11 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   String _searchQuery = '';
 
   // ── Smart Search (CBVR) state ───────────────────────────────────
-  bool _smartSearchEnabled = false;
   bool _cbvrLoading = false;
   String? _cbvrError;
   List<CbvrResult> _cbvrResults = [];
   String _lastCbvrQuery = '';
+  Timer? _debounce;
   // ───────────────────────────────────────────────────────────────
 
   final List<Map<String, String>> themes = [
@@ -59,15 +62,18 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     return films
         .where((f) =>
             f.title.toLowerCase().contains(q) ||
+            f.director.toLowerCase().contains(q) ||
             f.genre.toLowerCase().contains(q) ||
-            f.description.toLowerCase().contains(q))
+            f.description.toLowerCase().contains(q) ||
+            f.aiKeywords.any((k) => k.toLowerCase().contains(q)) ||
+            f.cbvrKeywords.any((k) => k.toLowerCase().contains(q)))
         .toList();
   }
 
   void _goToSearch({String genre = 'All'}) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => SearchScreen(initialGenre: genre)),
+      MaterialPageRoute(builder: (_) => SearchScreen(initialGenre: genre, isViewAllMode: true)),
     );
   }
 
@@ -99,6 +105,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -129,11 +136,12 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
               .take(5)
               .toList();
 
-          return CustomScrollView(
-            slivers: [
-              // App Bar
-              SliverAppBar(
-                backgroundColor: const Color(0xFF0D1F17),
+          return SafeArea(
+            child: CustomScrollView(
+              slivers: [
+                // App Bar
+                SliverAppBar(
+                  backgroundColor: const Color(0xFF0D1F17),
                 floating: true,
                 title: Row(
                   children: [
@@ -164,13 +172,9 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                     ),
                   ],
                 ),
-                actions: [
-                  CircleAvatar(
-                    radius: 18,
-                    backgroundColor: const Color(0xFF1A3528),
-                    child: const Icon(Icons.person, color: Colors.white54),
-                  ),
-                  const SizedBox(width: 12),
+                actions: const [
+                  UserAvatar(radius: 18, showInitialsFallback: true),
+                  SizedBox(width: 16),
                 ],
               ),
 
@@ -194,119 +198,60 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                                 style: const TextStyle(
                                     color: Colors.white, fontSize: 13),
                                 decoration: InputDecoration(
-                                  hintText: _smartSearchEnabled
-                                      ? 'Describe what you\'re looking for...'
-                                      : 'Search films...',
+                                  hintText: 'Search films, genres, themes...',
                                   hintStyle: const TextStyle(
                                       color: Colors.white38, fontSize: 13),
                                   prefixIcon: const Icon(Icons.search,
                                       color: Colors.white38, size: 20),
+                                  suffixIcon: _searchController.text.isNotEmpty
+                                      ? IconButton(
+                                          icon: const Icon(Icons.close, color: Colors.white54, size: 18),
+                                          onPressed: () {
+                                            _searchController.clear();
+                                            setState(() {
+                                              _searchQuery = '';
+                                              _cbvrResults = [];
+                                              _cbvrError = null;
+                                              _lastCbvrQuery = '';
+                                            });
+                                          },
+                                        )
+                                      : null,
                                   border: InputBorder.none,
                                   contentPadding:
                                       const EdgeInsets.symmetric(vertical: 12),
                                 ),
-                                onChanged: (value) => setState(() {
-                                  _searchQuery = value;
-                                  if (_smartSearchEnabled) {
-                                    _cbvrResults = [];
-                                    _cbvrError = null;
+                                onChanged: (value) {
+                                  setState(() {
+                                    _searchQuery = value;
+                                  });
+                                  if (_debounce?.isActive ?? false) _debounce!.cancel();
+                                  if (value.trim().isEmpty) {
+                                    setState(() {
+                                      _cbvrResults = [];
+                                      _lastCbvrQuery = '';
+                                      _cbvrLoading = false;
+                                    });
+                                    return;
                                   }
-                                }),
+                                  _debounce = Timer(const Duration(milliseconds: 800), () {
+                                    if (_searchQuery.trim().isNotEmpty) {
+                                      _runSmartSearch(allFilms);
+                                    }
+                                  });
+                                },
                                 onSubmitted: (_) {
-                                  if (_smartSearchEnabled) {
+                                  if (_debounce?.isActive ?? false) _debounce!.cancel();
+                                  if (_searchQuery.trim().isNotEmpty) {
                                     _runSmartSearch(allFilms);
                                   }
                                 },
-                                textInputAction: _smartSearchEnabled
-                                    ? TextInputAction.search
-                                    : TextInputAction.done,
-                              ),
-                            ),
-                            GestureDetector(
-                              onTap: () => setState(() {
-                                _smartSearchEnabled = !_smartSearchEnabled;
-                                _cbvrResults = [];
-                                _cbvrError = null;
-                                _lastCbvrQuery = '';
-                              }),
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 220),
-                                margin: const EdgeInsets.only(right: 8),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: _smartSearchEnabled
-                                      ? const Color(0xFF4CAF50)
-                                      : const Color(0xFF0D1F17),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.auto_awesome,
-                                      size: 12,
-                                      color: _smartSearchEnabled
-                                          ? Colors.white
-                                          : Colors.white38,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      'AI',
-                                      style: TextStyle(
-                                        color: _smartSearchEnabled
-                                            ? Colors.white
-                                            : Colors.white38,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                                textInputAction: TextInputAction.search,
                               ),
                             ),
                           ],
                         ),
                       ),
-
-                      if (_smartSearchEnabled) ...[
-                        const SizedBox(height: 8),
-                        GestureDetector(
-                          onTap: _searchQuery.trim().isNotEmpty
-                              ? () => _runSmartSearch(allFilms)
-                              : null,
-                          child: AnimatedOpacity(
-                            opacity:
-                                _searchQuery.trim().isNotEmpty ? 1.0 : 0.4,
-                            duration: const Duration(milliseconds: 200),
-                            child: Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF4CAF50),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: const Center(
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.auto_awesome,
-                                        color: Colors.white, size: 14),
-                                    SizedBox(width: 6),
-                                    Text(
-                                      'Search with AI',
-                                      style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w700),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
                       const SizedBox(height: 20),
 
                       if (snapshot.connectionState == ConnectionState.waiting)
@@ -317,71 +262,89 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                                 color: Color(0xFF4CAF50)),
                           ),
                         )
-                      else if (_smartSearchEnabled && _cbvrLoading)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 40),
-                          child: Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                CircularProgressIndicator(
-                                    color: Color(0xFF4CAF50), strokeWidth: 3),
-                                SizedBox(height: 14),
-                                Text('Analyzing with AI...',
-                                    style: TextStyle(
-                                        color: Colors.white54, fontSize: 13)),
-                              ],
-                            ),
-                          ),
-                        )
-                      else if (_smartSearchEnabled && _cbvrError != null)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 24),
-                          child: Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.error_outline,
-                                    color: Color(0xFFEF5350), size: 40),
-                                const SizedBox(height: 10),
-                                Text(_cbvrError!,
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                        color: Colors.white38,
-                                        fontSize: 12,
-                                        height: 1.5)),
-                                const SizedBox(height: 12),
-                                GestureDetector(
-                                  onTap: () => _runSmartSearch(allFilms),
-                                  child: const Text('Try Again',
-                                      style: TextStyle(
-                                          color: Color(0xFF4CAF50),
-                                          fontWeight: FontWeight.w700)),
+                      else if (_searchQuery.isNotEmpty) ...() {
+                        final List<Widget> widgets = [];
+
+                        // 1. Loading
+                        if (_cbvrLoading && films.isEmpty) {
+                          widgets.add(
+                            const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 40),
+                              child: Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    CircularProgressIndicator(
+                                        color: Color(0xFF4CAF50), strokeWidth: 3),
+                                    SizedBox(height: 14),
+                                    Text('Analyzing with AI...',
+                                        style: TextStyle(
+                                            color: Colors.white54, fontSize: 13)),
+                                  ],
                                 ),
-                              ],
-                            ),
-                          ),
-                        )
-                      else if (_smartSearchEnabled && _lastCbvrQuery.isNotEmpty)
-                        if (_cbvrResults.isEmpty)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 40),
-                            child: Center(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.auto_awesome, color: Colors.white38, size: 40),
-                                  const SizedBox(height: 12),
-                                  Text('No films matched "$_lastCbvrQuery"',
-                                      style: const TextStyle(color: Colors.white38, fontSize: 14)),
-                                ],
                               ),
                             ),
-                          )
-                        else
-                          ...() {
-                            final filmMap = {for (final f in allFilms) f.id: f};
-                            return [
+                          );
+                        }
+
+                        // 2. Error
+                        if (_cbvrError != null) {
+                          widgets.add(
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 24),
+                              child: Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.error_outline,
+                                        color: Color(0xFFEF5350), size: 40),
+                                    const SizedBox(height: 10),
+                                    Text(_cbvrError!,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                            color: Colors.white38,
+                                            fontSize: 12,
+                                            height: 1.5)),
+                                    const SizedBox(height: 12),
+                                    GestureDetector(
+                                      onTap: () => _runSmartSearch(allFilms),
+                                      child: const Text('Try Again',
+                                          style: TextStyle(
+                                              color: Color(0xFF4CAF50),
+                                              fontWeight: FontWeight.w700)),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+
+                        // 3. Local Results
+                        if (films.isNotEmpty) {
+                          widgets.add(
+                            Text(
+                              '${films.length} local result${films.length == 1 ? '' : 's'} for "$_searchQuery"',
+                              style: const TextStyle(
+                                  color: Colors.white54, fontSize: 13),
+                            ),
+                          );
+                          widgets.add(const SizedBox(height: 12));
+                          widgets.addAll(films.map((film) => _searchResultCard(film)));
+                        }
+
+                        // 4. AI Results
+                        if (_lastCbvrQuery.isNotEmpty && !_cbvrLoading) {
+                          final localIds = films.map((f) => f.id).toSet();
+                          final uniqueCbvr = _cbvrResults
+                              .where((r) => !localIds.contains(r.filmId))
+                              .toList();
+
+                          if (uniqueCbvr.isNotEmpty) {
+                            if (films.isNotEmpty) {
+                              widgets.add(const SizedBox(height: 24));
+                            }
+                            widgets.add(
                               Padding(
                                 padding: const EdgeInsets.only(bottom: 10),
                                 child: Row(
@@ -390,49 +353,67 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                                         color: Color(0xFF4CAF50), size: 13),
                                     const SizedBox(width: 5),
                                     Text(
-                                      '${_cbvrResults.length} AI result${_cbvrResults.length != 1 ? 's' : ''} for "$_lastCbvrQuery"',
+                                      '${uniqueCbvr.length} AI result${uniqueCbvr.length != 1 ? 's' : ''} for "$_lastCbvrQuery"',
                                       style: const TextStyle(
                                           color: Colors.white54, fontSize: 12),
                                     ),
                                   ],
                                 ),
                               ),
-                              ..._cbvrResults.map((r) {
-                                final film = filmMap[r.filmId];
-                                if (film == null) return const SizedBox.shrink();
-                                return CbvrResultCard(
-                                  film: film,
-                                  result: r,
-                                  animationIndex: _cbvrResults.indexOf(r),
-                                  onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                        builder: (_) =>
-                                            FilmDetailScreen(film: film)),
+                            );
+
+                            final filmMap = {for (final f in allFilms) f.id: f};
+                            widgets.addAll(uniqueCbvr.map((r) {
+                              final film = filmMap[r.filmId];
+                              if (film == null) return const SizedBox.shrink();
+                              return CbvrResultCard(
+                                film: film,
+                                result: r,
+                                animationIndex: _cbvrResults.indexOf(r),
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) =>
+                                          FilmDetailScreen(film: film)),
+                                ),
+                              );
+                            }));
+                          } else if (films.isEmpty) {
+                            widgets.add(
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 40),
+                                child: Center(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.auto_awesome,
+                                          color: Colors.white38, size: 40),
+                                      const SizedBox(height: 12),
+                                      Text('No films matched "$_lastCbvrQuery"',
+                                          style: const TextStyle(
+                                              color: Colors.white38,
+                                              fontSize: 14)),
+                                    ],
                                   ),
-                                );
-                              }),
-                            ];
-                          }()
-                      else if (!_smartSearchEnabled && _searchQuery.isNotEmpty) ...[
-                        Text(
-                          '${films.length} result${films.length == 1 ? '' : 's'} for "$_searchQuery"',
-                          style: const TextStyle(
-                              color: Colors.white54, fontSize: 13),
-                        ),
-                        const SizedBox(height: 12),
-                        if (films.isEmpty)
-                          const Center(
-                            child: Padding(
-                              padding: EdgeInsets.symmetric(vertical: 40),
-                              child: Text('No films found',
-                                  style: TextStyle(
-                                      color: Colors.white38, fontSize: 14)),
+                                ),
+                              ),
+                            );
+                          }
+                        } else if (films.isEmpty && !_cbvrLoading && _lastCbvrQuery.isEmpty) {
+                          widgets.add(
+                            const Center(
+                              child: Padding(
+                                padding: EdgeInsets.symmetric(vertical: 40),
+                                child: Text('No films found locally',
+                                    style: TextStyle(
+                                        color: Colors.white38, fontSize: 14)),
+                              ),
                             ),
-                          )
-                        else
-                          ...films.map((film) => _searchResultCard(film)),
-                      ]
+                          );
+                        }
+
+                        return widgets;
+                      }()
 
                       // Normal home content
                       else if (allFilms.isEmpty)
@@ -520,7 +501,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                 ),
               ),
             ],
-          );
+          ));
         },
       ),
     );
@@ -650,8 +631,9 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   Widget _emptyState() {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 60),
-      child: Column(
-        children: const [
+      child: Center(
+        child: Column(
+          children: const [
           Icon(Icons.movie_outlined, color: Colors.white24, size: 64),
           SizedBox(height: 16),
           Text('No documentaries yet',
@@ -663,6 +645,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
           Text('Be the first to submit one!',
               style: TextStyle(color: Colors.white38, fontSize: 13)),
         ],
+        ),
       ),
     );
   }
@@ -675,7 +658,14 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
         itemCount: themes.length,
         itemBuilder: (_, i) {
           return GestureDetector(
-            onTap: () => _goToSearch(genre: themes[i]['label']!),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ThemeFilmsScreen(genre: themes[i]['label']!),
+                ),
+              );
+            },
             child: Container(
               width: 80,
               margin: const EdgeInsets.only(right: 10),

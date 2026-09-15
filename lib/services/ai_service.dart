@@ -15,12 +15,16 @@ class AiService {
   // Loaded from env.dart to protect secrets from GitHub
   static const String _apiKey = geminiApiKey;
 
-  static Future<AiMetadata> generateMetadata(String title, String description) async {
+  static Future<AiMetadata> generateMetadata(String title, String description, {String? visualDescription}) async {
     try {
       final model = GenerativeModel(
-        model: 'gemini-3.6-flash',
+        model: 'gemini-3.5-flash',
         apiKey: _apiKey,
       );
+
+      final visualContext = (visualDescription != null && visualDescription.isNotEmpty) 
+        ? '\nVisual Context (from thumbnail): "$visualDescription"' 
+        : '';
 
       final prompt = '''
 You are an expert AI video analysis tool for a university documentary platform in the Philippines.
@@ -28,23 +32,26 @@ Your task is to provide an accurate summary and keywords for a documentary.
 
 The user provided the following details:
 Title: "$title"
-Description: "$description"
+Description: "$description"$visualContext
 
 IMPORTANT INSTRUCTIONS:
-1. Generate a highly professional, accurate summary (3-4 sentences max) in ENGLISH describing the true themes, cultural relevance, and potential impact of this documentary based on its title and description.
-2. Generate a list of 5 to 8 highly relevant searchable keywords/tags (these can be English, Tagalog, or Kapampangan) that describe the actual concepts discussed.
+1. Detect the language used in the Title and Description (e.g. English, Tagalog, Kapampangan).
+2. You MUST write the summary ENTIRELY in the language you detected. If the title/description is in Kapampangan, the summary MUST be written in pure Kapampangan. If Tagalog, use Tagalog.
+3. Generate a highly professional summary (2-4 sentences) based STRICTLY on the provided title and description. DO NOT invent or hallucinate any themes, plot points, or cultural relevance that are not explicitly mentioned in the text. If the description is very short or vague, just state factually what the title implies without adding fabricated details.
+4. Generate a list of 5 to 8 highly relevant searchable keywords/tags that describe the concepts actually mentioned in the text.
 
 Format your response exactly as JSON like this (no markdown tags, just the raw JSON):
 {
-  "summary": "Your accurate professional summary here...",
+  "detectedLanguage": "Kapampangan",
+  "summary": "Your accurate professional summary written in the detectedLanguage...",
   "keywords": ["keyword1", "keyword2", "keyword3"]
 }
 ''';
 
       final content = [Content.text(prompt)];
       final response = await model.generateContent(content).timeout(
-        const Duration(seconds: 15),
-        onTimeout: () => throw Exception('AI generation timed out after 15 seconds. Please check your internet connection or try again.'),
+        const Duration(seconds: 45),
+        onTimeout: () => throw Exception('AI generation timed out after 45 seconds. Please check your internet connection or try again.'),
       );
       
       final text = response.text;
@@ -89,7 +96,7 @@ Format your response exactly as JSON like this (no markdown tags, just the raw J
       final imagePart = DataPart('image/jpeg', response.bodyBytes);
 
       final model = GenerativeModel(
-        model: 'gemini-3.6-flash',
+        model: 'gemini-3.5-flash',
         apiKey: _apiKey,
       );
 
@@ -125,8 +132,8 @@ Just describe the visual content directly as if describing the scene.
       ];
 
       final aiResponse = await model.generateContent(content).timeout(
-        const Duration(seconds: 20),
-        onTimeout: () => throw Exception('Visual analysis timed out.'),
+        const Duration(seconds: 45),
+        onTimeout: () => throw Exception('Visual analysis timed out after 45 seconds.'),
       );
 
       final text = aiResponse.text;

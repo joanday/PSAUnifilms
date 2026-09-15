@@ -79,18 +79,31 @@ class MySubmissionsScreen extends StatelessWidget {
           child: Text(title, style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
         ),
         SizedBox(
-          height: 160,
+          height: 180,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             itemCount: films.length,
             itemBuilder: (context, index) {
               final film = films[index];
+              
+              // Format the date locally
+              String formattedDate = '';
+              if (film.createdAt != null) {
+                final d = film.createdAt!;
+                final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                final monthStr = months[d.month - 1];
+                final ampm = d.hour >= 12 ? 'PM' : 'AM';
+                final hour = d.hour % 12 == 0 ? 12 : d.hour % 12;
+                final minute = d.minute.toString().padLeft(2, '0');
+                formattedDate = '$monthStr ${d.day}, ${d.year} $hour:$minute $ampm';
+              }
+
               return GestureDetector(
                 onTap: () {
                   Navigator.push(context, MaterialPageRoute(builder: (_) => FilmDetailScreen(film: film)));
                 },
                 child: Container(
-                  width: 140,
+                  width: 150,
                   margin: const EdgeInsets.only(right: 12),
                   decoration: BoxDecoration(
                     color: AppTheme.bgCard,
@@ -109,8 +122,32 @@ class MySubmissionsScreen extends StatelessWidget {
                               ? CachedNetworkImage(
                                   imageUrl: film.thumbnailUrl,
                                   fit: BoxFit.cover,
+                                  errorWidget: (context, url, error) => Container(
+                                    color: Colors.grey[900],
+                                    child: const Center(
+                                      child: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.movie_creation_outlined, color: Colors.white54, size: 24),
+                                          SizedBox(height: 4),
+                                          Text('Processing...', style: TextStyle(color: Colors.white54, fontSize: 10)),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  placeholder: (context, url) => Container(
+                                    color: Colors.grey[900],
+                                    child: const Center(
+                                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white54),
+                                    ),
+                                  ),
                                 )
-                              : Container(color: Colors.grey[900]),
+                              : Container(
+                                  color: Colors.grey[900],
+                                  child: const Center(
+                                    child: Icon(Icons.movie, color: Colors.white54),
+                                  ),
+                                ),
                         ),
                       ),
                       Padding(
@@ -145,6 +182,13 @@ class MySubmissionsScreen extends StatelessWidget {
                                   ),
                                 ),
                               ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              formattedDate,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: Colors.white38, fontSize: 10),
                             ),
                           ],
                         ),

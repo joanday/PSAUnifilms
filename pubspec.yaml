@@ -34,20 +34,36 @@ dependencies:
   crypto: ^3.0.7
   cloud_functions: ^6.4.0
   cross_file: ^0.3.5+5
+  image_picker: ^1.2.3
+  image_cropper: ^12.2.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_launcher_icons: ^0.13.1
   flutter_lints: ^6.0.0
+  flutter_native_splash: ^2.4.8
 
 flutter:
   uses-material-design: true
   assets:
     - assets/images/psaulogo.png
-    - assets/images/app_icon.png
     - assets/service_account.json
+    - assets/images/app_icon.png
+    - assets/images/app_icon_padded.png
 
 flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/images/app_icon_padded.png"
+  adaptive_icon_background: "#1F3413"
+  adaptive_icon_foreground: "assets/images/app_icon_padded.png"
+
+flutter_native_splash:
+  color: "#1F3413"
+  image: "assets/images/app_icon_padded.png"
   android: true
   ios: true
-  image_path: "assets/images/app_icon.png"
+  android_12:
+    color: "#1F3413"
+    image: "assets/images/app_icon_padded.png"

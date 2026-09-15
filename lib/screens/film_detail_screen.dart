@@ -24,6 +24,82 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
   
   int? _videoStatus;
   bool _checkingStatus = true;
+  late String _localAiSummary;
+  late List<String> _localAiKeywords;
+
+  bool get _canEdit {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    return uid == widget.film.uploadedBy || (FirebaseAuth.instance.currentUser?.email?.endsWith('@psau.edu.ph') ?? false);
+  }
+
+  Future<void> _showEditAiInsightsDialog(String currentSummary, List<String> currentKeywords) async {
+    final summaryController = TextEditingController(text: currentSummary);
+    final keywordsController = TextEditingController(text: currentKeywords.join(', '));
+    
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: AppTheme.bgCard,
+          title: const Text('Edit AI Insights', style: TextStyle(color: Colors.white)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: summaryController,
+                  maxLines: 5,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    labelText: 'Summary',
+                    labelStyle: TextStyle(color: Colors.white54),
+                    enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+                    focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: AppTheme.greenPrime)),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: keywordsController,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    labelText: 'Keywords (comma separated)',
+                    labelStyle: TextStyle(color: Colors.white54),
+                    enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+                    focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: AppTheme.greenPrime)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.greenPrime),
+              onPressed: () async {
+                final newSummary = summaryController.text.trim();
+                final newKeywords = keywordsController.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+                
+                await FirebaseFirestore.instance.collection('films').doc(widget.film.id).update({
+                  'aiSummary': newSummary,
+                  'aiKeywords': newKeywords,
+                  'cbvrData.transcriptSummary': newSummary,
+                  'cbvrData.searchKeywords': newKeywords,
+                });
+                
+                if (mounted) {
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('Save', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      }
+    );
+  }
 
   Future<void> _regenerateAi() async {
     setState(() => _isRegeneratingAi = true);
@@ -31,6 +107,7 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
       final aiData = await AiService.generateMetadata(
         widget.film.title,
         widget.film.description,
+        visualDescription: widget.film.visualDescription,
       );
       await FirebaseFirestore.instance.collection('films').doc(widget.film.id).update({
         'aiSummary': aiData.summary,
@@ -99,6 +176,8 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _localAiSummary = widget.film.aiSummary;
+    _localAiKeywords = List.from(widget.film.aiKeywords);
     _checkWatchlist();
     _checkVideoStatus();
   }
@@ -114,10 +193,10 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
       final segments = uri.pathSegments;
       if (segments.length >= 2) {
         final guid = segments[segments.length - 2];
-        final status = await BunnyService.getVideoStatus(guid);
+        final statusData = await BunnyService.getVideoStatus(guid);
         if (mounted) {
           setState(() {
-            _videoStatus = status;
+            _videoStatus = statusData['status'] as int;
             _checkingStatus = false;
           });
         }
@@ -269,27 +348,7 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
                     ),
                     const SizedBox(height: 20),
 
-                    // About
-                    const Text(
-                      'About',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      widget.film.description,
-                      style: const TextStyle(
-                        color: AppTheme.textMuted,
-                        fontSize: 14,
-                        height: 1.5,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    // AI Analysis Section
+                    // Smart Toggle: About vs AI Insight
                     StreamBuilder<DocumentSnapshot>(
                       stream: FirebaseFirestore.instance.collection('films').doc(widget.film.id).snapshots(),
                       builder: (context, snapshot) {
@@ -300,214 +359,144 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
                         final aiSummary = data['aiSummary'] as String? ?? '';
                         final aiKeywords = (data['aiKeywords'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
                         
-                        final bool hasError = aiSummary.toLowerCase().contains('error') || 
-                                              aiSummary.toLowerCase().contains('timed out') || 
-                                              aiSummary.toLowerCase().contains('failed') || 
-                                              aiSummary.toLowerCase().contains('exception') ||
-                                              (aiSummary.isEmpty && aiKeywords.isEmpty);
+                        final cbvrData = data['cbvrData'] as Map<String, dynamic>?;
+                        final cbvrSummary = cbvrData?['transcriptSummary'] as String?;
+                        final cbvrKeywords = (cbvrData?['searchKeywords'] as List<dynamic>?)?.map((e) => e.toString()).toList();
+                        
+                        final displaySummary = (cbvrSummary != null && cbvrSummary.trim().isNotEmpty) ? cbvrSummary : aiSummary;
+                        final displayKeywords = (cbvrKeywords != null && cbvrKeywords.isNotEmpty) ? cbvrKeywords : aiKeywords;
+                        
+                        final bool hasError = displaySummary.toLowerCase().contains('error') || 
+                                              displaySummary.toLowerCase().contains('timed out') || 
+                                              displaySummary.toLowerCase().contains('failed') || 
+                                              displaySummary.toLowerCase().contains('exception') ||
+                                              (displaySummary.isEmpty && displayKeywords.isEmpty);
 
-                        return Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF132A1D),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: AppTheme.greenPrime.withValues(alpha: 0.3)),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.auto_awesome, color: AppTheme.greenPrime, size: 18),
-                                      const SizedBox(width: 8),
-                                      const Text(
-                                        'AI Insights',
-                                        style: TextStyle(
-                                          color: AppTheme.greenPrime,
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 16,
+                        // NEW LOGIC: Check description accuracy
+                        final cbvrMetadata = data['cbvrMetadata'] as Map<String, dynamic>?;
+                        
+                        // Default to TRUE if cbvrMetadata is missing (e.g. still processing or never processed)
+                        // This prevents the description from disappearing right after upload.
+                        final isAccurate = cbvrMetadata?['isDescriptionAccurate'] as bool? ?? true;
+                        
+                        // If accurate (and not empty), show original About. Otherwise show AI Insight.
+                        final showAbout = isAccurate && widget.film.description.trim().isNotEmpty;
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (showAbout) ...[
+                              const Text('About', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+                              const SizedBox(height: 8),
+                              Text(widget.film.description, style: const TextStyle(color: AppTheme.textMuted, fontSize: 14, height: 1.5)),
+                              const SizedBox(height: 24),
+                            ] else ...[
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF132A1D),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: AppTheme.greenPrime.withValues(alpha: 0.3)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            const Icon(Icons.auto_awesome, color: AppTheme.greenPrime, size: 18),
+                                            const SizedBox(width: 8),
+                                            const Text('AI Insights', style: TextStyle(color: AppTheme.greenPrime, fontWeight: FontWeight.w700, fontSize: 16)),
+                                          ],
+                                        ),
+                                          if (_canEdit)
+                                            IconButton(
+                                              icon: const Icon(Icons.edit, color: Colors.white54, size: 18),
+                                              padding: EdgeInsets.zero,
+                                              constraints: const BoxConstraints(),
+                                              onPressed: () => _showEditAiInsightsDialog(displaySummary, displayKeywords),
+                                            ),
+                                        ],
+                                      ),
+                                    const SizedBox(height: 12),
+                                    if (data['cbvrStatus'] == 'processing' && cbvrSummary == null)
+                                      Container(
+                                        margin: const EdgeInsets.only(bottom: 12),
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: Colors.orange.withOpacity(0.15),
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            const SizedBox(
+                                              width: 14,
+                                              height: 14,
+                                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orange),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            const Expanded(
+                                              child: Text(
+                                                'The AI is currently watching this video to generate a highly accurate summary. Showing temporary basic summary...',
+                                                style: TextStyle(color: Colors.orange, fontSize: 12, height: 1.4),
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              if (hasError) ...[
-                                Text(
-                                  aiSummary.isNotEmpty ? aiSummary : 'No AI Insight available.',
-                                  style: const TextStyle(color: Colors.white60, fontSize: 13, height: 1.5),
-                                ),
-                                const SizedBox(height: 12),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: OutlinedButton.icon(
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: AppTheme.greenPrime,
-                                      side: const BorderSide(color: AppTheme.greenPrime),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                    ),
-                                    onPressed: _isRegeneratingAi ? null : _regenerateAi,
-                                    icon: _isRegeneratingAi 
-                                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.greenPrime))
-                                      : const Icon(Icons.auto_awesome),
-                                    label: Text(_isRegeneratingAi ? 'Generating...' : 'Generate AI Insight'),
-                                  ),
-                                ),
-                              ] else ...[
-                                if (aiSummary.isNotEmpty) ...[
-                                  const Text(
-                                    'Summary',
-                                    style: TextStyle(
-                                      color: Colors.white70,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    aiSummary,
-                                    style: const TextStyle(
-                                      color: Colors.white60,
-                                      fontSize: 13,
-                                      height: 1.5,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                ],
-                                if (aiKeywords.isNotEmpty) ...[
-                                  const Text(
-                                    'Keywords',
-                                    style: TextStyle(
-                                      color: Colors.white70,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Wrap(
-                                    spacing: 6,
-                                    runSpacing: 6,
-                                    children: aiKeywords.map((tag) {
-                                      return Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: AppTheme.greenPrime.withValues(alpha: 0.15),
-                                          borderRadius: BorderRadius.circular(16),
-                                        ),
-                                        child: Text(
-                                          '#$tag',
-                                          style: const TextStyle(
-                                            color: AppTheme.greenPrime,
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w500,
+                                      if (hasError) ...[
+                                        Text(displaySummary.isNotEmpty ? displaySummary : 'No AI Insight available.', style: const TextStyle(color: Colors.white60, fontSize: 13, height: 1.5)),
+                                      const SizedBox(height: 12),
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: OutlinedButton.icon(
+                                          style: OutlinedButton.styleFrom(
+                                            foregroundColor: AppTheme.greenPrime,
+                                            side: const BorderSide(color: AppTheme.greenPrime),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                           ),
+                                          onPressed: _isRegeneratingAi ? null : _regenerateAi,
+                                          icon: _isRegeneratingAi 
+                                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.greenPrime))
+                                            : const Icon(Icons.auto_awesome),
+                                          label: Text(_isRegeneratingAi ? 'Generating...' : 'Generate AI Insight'),
                                         ),
-                                      );
-                                    }).toList(),
-                                  ),
-                                ],
-                              ],
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 24),
-
-                    // Visual Description (CBVR) Section
-                    StreamBuilder<DocumentSnapshot>(
-                      stream: FirebaseFirestore.instance
-                          .collection('films')
-                          .doc(widget.film.id)
-                          .snapshots(),
-                      builder: (context, snap) {
-                        if (!snap.hasData) return const SizedBox.shrink();
-                        final d = snap.data!.data() as Map<String, dynamic>?;
-                        if (d == null) return const SizedBox.shrink();
-                        final vd = d['visualDescription'] as String? ?? '';
-                        final hasVisual = vd.isNotEmpty &&
-                            !vd.toLowerCase().contains('unavailable');
-                        return Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF0F2318),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                                color: const Color(0xFF1565C0).withValues(alpha: 0.5)),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  const Icon(Icons.videocam,
-                                      color: Color(0xFF42A5F5), size: 18),
-                                  const SizedBox(width: 8),
-                                  const Text(
-                                    'Visual Content (CBVR)',
-                                    style: TextStyle(
-                                      color: Color(0xFF42A5F5),
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 15,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              if (hasVisual) ...[
-                                Text(
-                                  vd,
-                                  style: const TextStyle(
-                                      color: Colors.white60,
-                                      fontSize: 13,
-                                      height: 1.5),
-                                ),
-                                const SizedBox(height: 12),
-                              ] else ...[
-                                const Text(
-                                  'No visual analysis yet. Run it below to enable CBVR search for this film.',
-                                  style: TextStyle(
-                                      color: Colors.white38,
-                                      fontSize: 13,
-                                      height: 1.5),
-                                ),
-                                const SizedBox(height: 12),
-                              ],
-                              SizedBox(
-                                width: double.infinity,
-                                child: OutlinedButton.icon(
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: const Color(0xFF42A5F5),
-                                    side: const BorderSide(
-                                        color: Color(0xFF42A5F5)),
-                                    shape: RoundedRectangleBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(8)),
-                                  ),
-                                  onPressed: _isRegeneratingVisual
-                                      ? null
-                                      : _regenerateVisual,
-                                  icon: _isRegeneratingVisual
-                                      ? const SizedBox(
-                                          width: 16,
-                                          height: 16,
-                                          child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              color: Color(0xFF42A5F5)))
-                                      : const Icon(Icons.videocam_outlined),
-                                  label: Text(_isRegeneratingVisual
-                                      ? 'Analyzing frames...'
-                                      : hasVisual
-                                          ? 'Re-analyze Visual Content'
-                                          : 'Analyze Visual Content'),
+                                      ),
+                                      ] else ...[
+                                        if (displaySummary.isNotEmpty) ...[
+                                          const Text('Summary', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600, fontSize: 13)),
+                                          const SizedBox(height: 4),
+                                          Text(displaySummary, style: const TextStyle(color: Colors.white60, fontSize: 13, height: 1.5)),
+                                          const SizedBox(height: 16),
+                                        ],
+                                        if (displayKeywords.isNotEmpty) ...[
+                                          const Text('Keywords', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600, fontSize: 13)),
+                                          const SizedBox(height: 8),
+                                          Wrap(
+                                            spacing: 6,
+                                            runSpacing: 6,
+                                            children: displayKeywords.map((tag) {
+                                            return Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                              decoration: BoxDecoration(
+                                                color: AppTheme.greenPrime.withValues(alpha: 0.15),
+                                                borderRadius: BorderRadius.circular(16),
+                                              ),
+                                              child: Text('#$tag', style: const TextStyle(color: AppTheme.greenPrime, fontSize: 11, fontWeight: FontWeight.w500)),
+                                            );
+                                          }).toList(),
+                                        ),
+                                      ],
+                                    ],
+                                  ],
                                 ),
                               ),
-                            ],
-                          ),
+                              const SizedBox(height: 24),
+                            ]
+                          ]
                         );
                       },
                     ),

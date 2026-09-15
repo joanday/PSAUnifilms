@@ -14,36 +14,20 @@ class StudentMainNavScreen extends StatefulWidget {
 class _StudentMainNavScreenState extends State<StudentMainNavScreen> {
   int _currentIndex = 0;
 
-  // ✅ FIX: build only the active tab instead of using IndexedStack.
-  // IndexedStack builds ALL children immediately (just hides the
-  // inactive ones visually), which meant WatchlistScreen ran its
-  // FirebaseAuth.currentUser! lookup the instant this nav screen
-  // mounted — even while the Home tab was the one on screen. If auth
-  // state was still settling at that moment, it crashed the whole
-  // nav screen with "Null check operator used on a null value".
-  //
-  // Building lazily means a tab's widget (and any Firestore/Auth
-  // calls in its build method) only runs once the user actually
-  // taps into it.
-  Widget _buildCurrentScreen() {
-    switch (_currentIndex) {
-      case 0:
-        return const StudentHomeScreen();
-      case 1:
-        return const WatchlistScreen();
-      case 2:
-        return const SubmitScreen();
-      case 3:
-        return const ProfileScreen();
-      default:
-        return const StudentHomeScreen();
-    }
-  }
+  final List<Widget> _screens = const [
+    StudentHomeScreen(),
+    WatchlistScreen(),
+    SubmitScreen(),
+    ProfileScreen(),
+  ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _buildCurrentScreen(),
+      body: IndexedStack(
+        index: _currentIndex,
+        children: _screens,
+      ),
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
           color: Color(0xFF0D1F17),

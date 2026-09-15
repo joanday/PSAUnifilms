@@ -1,8 +1,16 @@
+import 'dart:convert';
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'manage_users_screen.dart';
+import 'watch_screen.dart';
 import '../services/fcm_token_service.dart';
+import '../services/bunny_service.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../theme/app_theme.dart';
 
 // ─── Enums & Models ───────────────────────────────────────────────────────────
 
@@ -20,7 +28,12 @@ class FilmSubmission {
   String note;
   final String colorHex;
   final String thumbnail;
+  final String description;
   final bool isOldDocumentary;
+  String cbvrStatus;
+  String cbvrError;
+  int cbvrProgress;
+  final String? videoUrl;
 
   FilmSubmission({
     required this.id,
@@ -34,7 +47,12 @@ class FilmSubmission {
     required this.colorHex,
     this.note = '',
     this.thumbnail = '',
+    this.description = '',
     this.isOldDocumentary = false,
+    this.cbvrStatus = '',
+    this.cbvrError = '',
+    this.cbvrProgress = 0,
+    this.videoUrl,
   });
 }
 
@@ -49,6 +67,66 @@ const _textSecondary = Color(0xFF9E9E9E);
 const _pendingColor = Color(0xFFFF8F00);
 const _approvedColor = Color(0xFF4CAF50);
 const _returnedColor = Color(0xFFE53935);
+
+// ─── Shared Bunny.net status helpers ──────────────────────────────────────────
+// Used by BOTH the "Approve" flow and the "Retry AI"/"Re-analyze" flow so
+// they can never disagree about whether a video is actually ready.
+
+/// Fetches the Bunny.net encode status for a film's video, given its
+/// videoUrl. Returns null if the URL is missing/unparseable or the request
+/// fails — callers should treat null as "couldn't determine, proceed with
+/// caution" rather than blocking the user forever.
+Future<Map<String, dynamic>?> _fetchBunnyStatus(String? videoUrl) async {
+  if (videoUrl == null) return null;
+  try {
+    final uri = Uri.parse(videoUrl);
+    final segments = uri.pathSegments;
+    if (segments.length >= 2) {
+      final guid = segments[segments.length - 2];
+      return await BunnyService.getVideoStatus(guid);
+    }
+  } catch (e) {
+    debugPrint('Error checking video status: $e');
+  }
+  return null;
+}
+
+/// Bunny.net status codes below 3 mean the video is still queued/encoding
+/// (not yet watchable end-to-end). This is the same threshold the Approve
+/// flow already used.
+bool _isBunnyStillProcessing(Map<String, dynamic> statusData) {
+  final status = statusData['status'] as int;
+  return status >= 0 && status < 3;
+}
+
+void _showStillProcessingDialog(BuildContext context, int progress) {
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      backgroundColor: AppTheme.bgCard,
+      title:
+          const Text('Still Processing', style: TextStyle(color: Colors.white)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const CircularProgressIndicator(color: AppTheme.greenPrime),
+          const SizedBox(height: 20),
+          Text(
+            'The video is still being processed on the server.\n\nCurrent Progress: $progress%',
+            style: const TextStyle(color: Colors.white70, height: 1.5),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('OK', style: TextStyle(color: AppTheme.greenPrime)),
+        ),
+      ],
+    ),
+  );
+}
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
@@ -67,6 +145,14 @@ class _DevcomDashboardScreenState extends State<DevcomDashboardScreen> {
   // every single time setState() runs anywhere in this widget (e.g. when
   // switching tabs), which causes the moderation queue to behave
   // inconsistently and can make UI updates look like they "don't happen".
+  //
+  // Because this stream is global to the whole DevcomDashboardScreen (not
+  // scoped to a single tab/screen), any Firestore write the backend makes
+  // to a film's cbvrStatus/cbvrProgress — e.g. while a re-embed or AI
+  // analysis job is running on the server — is picked up live no matter
+  // which tab the officer is currently looking at. Switching tabs does
+  // NOT cancel or pause any in-flight Cloud Function call; those run on
+  // Firebase's servers independently of what the client app is doing.
   late final Stream<List<FilmSubmission>> _submissionsStream = FirebaseFirestore
       .instance
       .collection('films')
@@ -86,8 +172,15 @@ class _DevcomDashboardScreenState extends State<DevcomDashboardScreen> {
               status: _parseStatus(data['status']),
               colorHex: '4A7C59',
               note: data['note'] ?? '',
-              thumbnail: data['thumbnail'] ?? '',
+              thumbnail: data['thumbnailUrl'] ?? data['thumbnail'] ?? '',
+              description: data['description'] ?? '',
               isOldDocumentary: data['isOldDocumentary'] ?? false,
+              cbvrStatus: data['cbvrStatus'] ?? '',
+              cbvrError: data['cbvrError'] ?? '',
+              cbvrProgress: (data['cbvrProgress'] ?? 0) is int
+                  ? (data['cbvrProgress'] ?? 0)
+                  : 0,
+              videoUrl: data['videoUrl'] as String?,
             );
           }).toList());
 
@@ -101,8 +194,8 @@ class _DevcomDashboardScreenState extends State<DevcomDashboardScreen> {
   // security rules rejecting the write) are visible instead of silently
   // doing nothing. This is almost certainly why "Approve" looked like it
   // wasn't working — the write was failing and you never knew.
-  Future<void> _updateStatus(
-      String id, SubmissionStatus newStatus, String note, String title, String uploaderId) async {
+  Future<void> _updateStatus(String id, SubmissionStatus newStatus, String note,
+      String title, String uploaderId) async {
     final statusStr = switch (newStatus) {
       SubmissionStatus.approved => 'approved',
       SubmissionStatus.returned => 'returned',
@@ -113,6 +206,25 @@ class _DevcomDashboardScreenState extends State<DevcomDashboardScreen> {
       final doc =
           await FirebaseFirestore.instance.collection('films').doc(id).get();
       final title = doc.data()?['title'] ?? 'A film';
+
+      // Check if video is finished processing on Bunny.net before approving
+      if (newStatus == SubmissionStatus.approved) {
+        final videoUrl = doc.data()?['videoUrl'] as String?;
+        final statusData = await _fetchBunnyStatus(videoUrl);
+        if (statusData != null) {
+          if (_isBunnyStillProcessing(statusData)) {
+            if (!mounted) return;
+            final progress = statusData['encodeProgress'];
+            _showStillProcessingDialog(context, progress is int ? progress : 0);
+            return; // Abort approval
+          } else if (statusData['status'] == 5) {
+            if (!mounted) return;
+            _showToast('❌ Cannot approve: Video processing failed on server.',
+                Colors.red);
+            return; // Abort approval
+          }
+        }
+      }
 
       await FirebaseFirestore.instance.collection('films').doc(id).update({
         'status': statusStr,
@@ -145,6 +257,51 @@ class _DevcomDashboardScreenState extends State<DevcomDashboardScreen> {
       debugPrint('❌ Failed to update film $id status to $statusStr: $e');
       if (!mounted) return;
       _showToast('❌ Update failed: $e', _returnedColor);
+    }
+  }
+
+  // ✅ NEW: deletes a film submission entirely from Firestore. Always
+  // confirms first since this is destructive and can't be undone from
+  // within the app. Note: this only removes the Firestore record — the
+  // actual video file stays on Bunny.net's storage unless removed there
+  // separately.
+  Future<void> _deleteFilm(String id, String title) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: _bgCard,
+        title: const Text('Delete Submission?',
+            style: TextStyle(color: Colors.white)),
+        content: Text(
+          'This will permanently delete "$title" and its review history. This cannot be undone.',
+          style: const TextStyle(color: Colors.white70, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child:
+                const Text('Cancel', style: TextStyle(color: _textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete',
+                style: TextStyle(
+                    color: _returnedColor, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await FirebaseFirestore.instance.collection('films').doc(id).delete();
+      if (!mounted) return;
+      _showToast('🗑 "$title" deleted.', _returnedColor);
+    } catch (e) {
+      debugPrint('❌ Failed to delete film $id: $e');
+      if (!mounted) return;
+      _showToast('❌ Delete failed: $e', _returnedColor);
     }
   }
 
@@ -200,14 +357,24 @@ class _DevcomDashboardScreenState extends State<DevcomDashboardScreen> {
           _DashboardTab(
             submissions: submissions,
             onUpdateStatus: (id, status, note) => _updateStatus(
-                id, status, note, submissions.firstWhere((s) => s.id == id).title, submissions.firstWhere((s) => s.id == id).uploaderId),
+                id,
+                status,
+                note,
+                submissions.firstWhere((s) => s.id == id).title,
+                submissions.firstWhere((s) => s.id == id).uploaderId),
+            onDelete: _deleteFilm,
             onNavigateToSubmissions: () => setState(() => _selectedTab = 1),
             onNavigateToUsers: () => setState(() => _selectedTab = 2),
           ),
           _SubmissionsTab(
             submissions: submissions,
             onUpdateStatus: (id, status, note) => _updateStatus(
-                id, status, note, submissions.firstWhere((s) => s.id == id).title, submissions.firstWhere((s) => s.id == id).uploaderId),
+                id,
+                status,
+                note,
+                submissions.firstWhere((s) => s.id == id).title,
+                submissions.firstWhere((s) => s.id == id).uploaderId),
+            onDelete: _deleteFilm,
           ),
           const ManageUsersScreen(),
         ];
@@ -326,12 +493,13 @@ class _AppHeader extends StatelessWidget {
             width: 42,
             height: 42,
             decoration: BoxDecoration(
-              color: _bgCardLight,
-              borderRadius: BorderRadius.circular(21),
+              shape: BoxShape.circle,
               border: Border.all(color: _green.withValues(alpha: 0.4)),
+              image: const DecorationImage(
+                image: AssetImage('assets/images/psaulogo.png'),
+                fit: BoxFit.cover,
+              ),
             ),
-            child:
-                const Icon(Icons.movie_filter_rounded, color: _green, size: 22),
           ),
           const SizedBox(width: 12),
           Column(
@@ -398,12 +566,13 @@ class _FilmThumbnail extends StatelessWidget {
     if (thumbnail.isNotEmpty) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(8),
-        child: Image.network(
-          thumbnail,
+        child: CachedNetworkImage(
+          imageUrl: thumbnail,
           width: 70,
           height: 70,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _placeholder(color),
+          placeholder: (_, __) => _placeholder(color),
+          errorWidget: (_, __, ___) => _placeholder(color),
         ),
       );
     }
@@ -456,14 +625,74 @@ class _StatusBadge extends StatelessWidget {
   }
 }
 
+// ─── CBVR (AI analysis) progress badge ─────────────────────────────────────────
+// Small live indicator usable in cards/list tiles so officers can see that a
+// film's AI analysis is still running (and how far along it is) without
+// having to keep the film's detail modal open. Because it reads straight
+// off the FilmSubmission that comes from the global Firestore stream, this
+// updates live no matter which tab is currently showing.
+
+class _CbvrProgressBadge extends StatelessWidget {
+  final FilmSubmission submission;
+
+  const _CbvrProgressBadge({required this.submission});
+
+  @override
+  Widget build(BuildContext context) {
+    final status = submission.cbvrStatus;
+    if (status.isEmpty || status == 'completed') return const SizedBox.shrink();
+
+    final isFailed = status == 'failed';
+    final label = switch (status) {
+      'failed' => '❌ AI Analysis Failed',
+      'waiting' => '⏳ Waiting for video to encode...',
+      'downloading' => '⬇️ Preparing video...',
+      'uploading' => '☁️ Uploading video to AI... ${submission.cbvrProgress}%',
+      'analyzing' => '🧠 AI analyzing... ${submission.cbvrProgress}%',
+      _ => '⏳ Processing... ${submission.cbvrProgress}%',
+    };
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!isFailed)
+            const Padding(
+              padding: EdgeInsets.only(right: 6),
+              child: SizedBox(
+                width: 10,
+                height: 10,
+                child: CircularProgressIndicator(
+                    strokeWidth: 1.5, color: _pendingColor),
+              ),
+            ),
+          Flexible(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: isFailed ? _returnedColor : _pendingColor,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ─── Detail / Action Modal ────────────────────────────────────────────────────
 
 void showFilmDetailModal(
   BuildContext context,
   FilmSubmission submission,
   Future<void> Function(String id, SubmissionStatus status, String note)
-      onUpdateStatus,
-) {
+      onUpdateStatus, {
+  Future<void> Function(String id, String title)? onDelete,
+}) {
   final noteController = TextEditingController(text: submission.note);
   String selectedTheme = submission.theme;
 
@@ -494,19 +723,77 @@ void showFilmDetailModal(
                         borderRadius: BorderRadius.circular(2)),
                   ),
                 ),
-                // Thumbnail
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: submission.thumbnail.isNotEmpty
-                      ? Image.network(
-                          submission.thumbnail,
-                          width: double.infinity,
-                          height: 140,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              _placeholderBox(submission.colorHex),
-                        )
-                      : _placeholderBox(submission.colorHex),
+                // Thumbnail — tap to preview the video before deciding.
+                // ✅ NEW: officers no longer have to approve blind; tapping
+                // opens the same player students use to watch approved
+                // films, so a review can include actually watching it.
+                GestureDetector(
+                  onTap: submission.videoUrl == null
+                      ? null
+                      : () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => WatchScreen(
+                                videoUrl: submission.videoUrl!,
+                                title: submission.title,
+                                description: submission.description.isNotEmpty
+                                    ? submission.description
+                                    : 'Directed by ${submission.director.isNotEmpty ? submission.director : submission.studentName} • ${submission.theme} • ${submission.year}',
+                              ),
+                            ),
+                          ),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: submission.thumbnail.isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl: submission.thumbnail,
+                                width: double.infinity,
+                                height: 140,
+                                fit: BoxFit.cover,
+                                placeholder: (_, __) =>
+                                    _placeholderBox(submission.colorHex),
+                                errorWidget: (_, __, ___) => Container(
+                                  width: double.infinity,
+                                  height: 140,
+                                  color: Color(int.parse(
+                                          'FF${submission.colorHex}',
+                                          radix: 16))
+                                      .withValues(alpha: 0.2),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.movie_creation_outlined,
+                                          color: Colors.white54, size: 32),
+                                      SizedBox(height: 8),
+                                      Text('Processing...',
+                                          style: TextStyle(
+                                              color: Colors.white54,
+                                              fontSize: 12)),
+                                    ],
+                                  ),
+                                ),
+                              )
+                            : _placeholderBox(submission.colorHex),
+                      ),
+                      if (submission.videoUrl != null)
+                        Container(
+                          width: 56,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.45),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.6),
+                                width: 1.5),
+                          ),
+                          child: const Icon(Icons.play_arrow_rounded,
+                              color: Colors.white, size: 36),
+                        ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Text(submission.title,
@@ -518,6 +805,20 @@ void showFilmDetailModal(
                 _DetailRow(label: 'Student', value: submission.studentName),
                 if (submission.director.isNotEmpty)
                   _DetailRow(label: 'Director', value: submission.director),
+                // ✅ NEW: shows the description the student wrote at
+                // submission time — previously stored in Firestore but
+                // never read into the app or shown to officers.
+                if (submission.description.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  const Text('Description',
+                      style: TextStyle(color: _textSecondary, fontSize: 13)),
+                  const SizedBox(height: 4),
+                  Text(
+                    submission.description,
+                    style: const TextStyle(
+                        color: _textPrimary, fontSize: 13, height: 1.4),
+                  ),
+                ],
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 0),
                   child: Row(
@@ -605,6 +906,148 @@ void showFilmDetailModal(
                   ),
                 ),
                 const Divider(color: Colors.white12),
+                if (submission.cbvrStatus.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('AI Video Analysis (Smart Search)',
+                                style: TextStyle(
+                                    color: _textSecondary, fontSize: 13)),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                if (submission.cbvrStatus != 'completed' &&
+                                    submission.cbvrStatus != 'failed')
+                                  const SizedBox(
+                                    width: 10,
+                                    height: 10,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 1.5, color: _pendingColor),
+                                  ),
+                                if (submission.cbvrStatus != 'completed' &&
+                                    submission.cbvrStatus != 'failed')
+                                  const SizedBox(width: 6),
+                                Expanded(
+                                  child: (submission.cbvrStatus == 'waiting' ||
+                                          submission.cbvrStatus ==
+                                              'downloading')
+                                      ? _PreparingVideoText(
+                                          submission: submission)
+                                      : Text(
+                                          (() {
+                                            switch (submission.cbvrStatus) {
+                                              case 'completed':
+                                                return '✅ AI Insight Ready';
+                                              case 'failed':
+                                                return '❌ AI Analysis Failed';
+                                              case 'analyzing':
+                                                return '🧠 AI is watching the video... ${submission.cbvrProgress}%';
+                                              case 'uploading':
+                                                return '☁️ Uploading video to AI... ${submission.cbvrProgress}%';
+                                              default:
+                                                return '⏳ Processing...';
+                                            }
+                                          })(),
+                                          style: TextStyle(
+                                              color: submission.cbvrStatus ==
+                                                      'failed'
+                                                  ? _returnedColor
+                                                  : submission.cbvrStatus ==
+                                                          'completed'
+                                                      ? _approvedColor
+                                                      : _pendingColor,
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600),
+                                        ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: () async {
+                          // ✅ NEW: don't even attempt AI analysis if the
+                          // video itself isn't done encoding on Bunny.net
+                          // yet — this is exactly what was causing
+                          // "AI Analysis Failed" when tapped too early.
+                          final statusData =
+                              await _fetchBunnyStatus(submission.videoUrl);
+                          if (statusData != null &&
+                              _isBunnyStillProcessing(statusData)) {
+                            final progress = statusData['encodeProgress'];
+                            if (ctx.mounted) {
+                              _showStillProcessingDialog(
+                                  ctx, progress is int ? progress : 0);
+                            }
+                            return; // Abort — video not ready yet
+                          }
+
+                          try {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Starting AI analysis...'),
+                                  backgroundColor: _pendingColor),
+                            );
+                            Navigator.pop(ctx);
+                            // ✅ NEW: explicit longer timeout so a
+                            // slow-but-still-running
+                            // server-side analysis isn't misreported as
+                            // "Failed" on the client just because the
+                            // default callable timeout was too short.
+                            // Note: closing this modal / switching tabs
+                            // does NOT cancel the Cloud Function — it
+                            // keeps running on Firebase's servers, and the
+                            // live Firestore stream will reflect its
+                            // progress/result regardless of which screen
+                            // you're on.
+                            final callable =
+                                FirebaseFunctions.instance.httpsCallable(
+                              'retryCBVRMetadata',
+                              options: HttpsCallableOptions(
+                                  timeout: const Duration(seconds: 300)),
+                            );
+                            await callable.call({'filmId': submission.id});
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text('AI Analysis complete!'),
+                                    backgroundColor: _approvedColor),
+                              );
+                            }
+                          } catch (e) {
+                            // ✅ FIX: previously showed an empty "Failed: "
+                            // message with no actual error — now shows the
+                            // real reason.
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                    content: Text('Failed: $e'),
+                                    backgroundColor: _returnedColor),
+                              );
+                            }
+                          }
+                        },
+                        icon: const Icon(Icons.smart_toy_outlined, size: 16),
+                        label: Text(submission.cbvrStatus == 'completed'
+                            ? 'Re-analyze'
+                            : 'Retry AI'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1A2B1A),
+                          foregroundColor: _approvedColor,
+                          side: const BorderSide(color: _approvedColor),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Divider(color: Colors.white12),
+                ],
                 const SizedBox(height: 8),
                 const Text('Feedback / Revision Note',
                     style: TextStyle(color: _textSecondary, fontSize: 13)),
@@ -661,7 +1104,7 @@ void showFilmDetailModal(
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10)),
                           ),
-                          child: const Text('↩ Return'),
+                          child: const Text('📤 Send Note & Return'),
                         ),
                       ),
                     ],
@@ -689,6 +1132,27 @@ void showFilmDetailModal(
                     ],
                   ],
                 ),
+                // ✅ NEW: destructive action, kept visually separate from
+                // Approve/Return so it's not tapped by accident. Always
+                // confirms before actually deleting (see _deleteFilm).
+                if (onDelete != null) ...[
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: TextButton.icon(
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        onDelete(submission.id, submission.title);
+                      },
+                      icon: const Icon(Icons.delete_outline,
+                          color: _returnedColor, size: 18),
+                      label: const Text('Delete Submission',
+                          style: TextStyle(
+                              color: _returnedColor,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 8),
               ],
             ),
@@ -742,9 +1206,10 @@ class _DetailRow extends StatelessWidget {
 class _ModerationCard extends StatelessWidget {
   final FilmSubmission submission;
   final Future<void> Function(String, SubmissionStatus, String) onUpdateStatus;
+  final Future<void> Function(String, String)? onDelete;
 
   const _ModerationCard(
-      {required this.submission, required this.onUpdateStatus});
+      {required this.submission, required this.onUpdateStatus, this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -776,6 +1241,9 @@ class _ModerationCard extends StatelessWidget {
                 Text('Theme: ${submission.theme}',
                     style:
                         const TextStyle(color: _textSecondary, fontSize: 12)),
+                // ✅ NEW: live AI-analysis progress, visible from the
+                // Dashboard queue without opening the detail modal.
+                _CbvrProgressBadge(submission: submission),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 6,
@@ -786,8 +1254,29 @@ class _ModerationCard extends StatelessWidget {
                       color: _bgCardLight,
                       textColor: _textPrimary,
                       onTap: () => showFilmDetailModal(
-                          context, submission, onUpdateStatus),
+                          context, submission, onUpdateStatus,
+                          onDelete: onDelete),
                     ),
+                    // ✅ NEW: quick preview straight from the queue, no
+                    // need to open the full detail modal first.
+                    if (submission.videoUrl != null)
+                      _ActionButton(
+                        label: '▶ Preview',
+                        color: _bgCardLight,
+                        textColor: _approvedColor,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => WatchScreen(
+                              videoUrl: submission.videoUrl!,
+                              title: submission.title,
+                              description: submission.description.isNotEmpty
+                                  ? submission.description
+                                  : 'Directed by ${submission.director.isNotEmpty ? submission.director : submission.studentName} • ${submission.theme} • ${submission.year}',
+                            ),
+                          ),
+                        ),
+                      ),
                     _ActionButton(
                       label: '✓ Approve',
                       color: _green,
@@ -800,8 +1289,17 @@ class _ModerationCard extends StatelessWidget {
                       color: _returnedColor,
                       textColor: Colors.white,
                       onTap: () => showFilmDetailModal(
-                          context, submission, onUpdateStatus),
+                          context, submission, onUpdateStatus,
+                          onDelete: onDelete),
                     ),
+                    // ✅ NEW: quick delete straight from the queue.
+                    if (onDelete != null)
+                      _ActionButton(
+                        label: '🗑',
+                        color: _bgCardLight,
+                        textColor: _returnedColor,
+                        onTap: () => onDelete!(submission.id, submission.title),
+                      ),
                   ],
                 ),
               ],
@@ -882,12 +1380,14 @@ class _MenuRow extends StatelessWidget {
 class _DashboardTab extends StatelessWidget {
   final List<FilmSubmission> submissions;
   final Future<void> Function(String, SubmissionStatus, String) onUpdateStatus;
+  final Future<void> Function(String, String)? onDelete;
   final VoidCallback onNavigateToSubmissions;
   final VoidCallback onNavigateToUsers;
 
   const _DashboardTab({
     required this.submissions,
     required this.onUpdateStatus,
+    this.onDelete,
     required this.onNavigateToSubmissions,
     required this.onNavigateToUsers,
   });
@@ -971,7 +1471,9 @@ class _DashboardTab extends StatelessWidget {
             SliverList(
               delegate: SliverChildBuilderDelegate(
                 (context, i) => _ModerationCard(
-                    submission: queue[i], onUpdateStatus: onUpdateStatus),
+                    submission: queue[i],
+                    onUpdateStatus: onUpdateStatus,
+                    onDelete: onDelete),
                 childCount: queue.length,
               ),
             ),
@@ -1049,9 +1551,10 @@ class _StatCard extends StatelessWidget {
 class _SubmissionsTab extends StatefulWidget {
   final List<FilmSubmission> submissions;
   final Future<void> Function(String, SubmissionStatus, String) onUpdateStatus;
+  final Future<void> Function(String, String)? onDelete;
 
   const _SubmissionsTab(
-      {required this.submissions, required this.onUpdateStatus});
+      {required this.submissions, required this.onUpdateStatus, this.onDelete});
 
   @override
   State<_SubmissionsTab> createState() => _SubmissionsTabState();
@@ -1153,6 +1656,7 @@ class _SubmissionsTabState extends State<_SubmissionsTab> {
                     itemBuilder: (_, i) => _SubmissionListTile(
                       submission: filtered[i],
                       onUpdateStatus: widget.onUpdateStatus,
+                      onDelete: widget.onDelete,
                     ),
                   ),
           ),
@@ -1198,14 +1702,16 @@ class _FilterChip extends StatelessWidget {
 class _SubmissionListTile extends StatelessWidget {
   final FilmSubmission submission;
   final Future<void> Function(String, SubmissionStatus, String) onUpdateStatus;
+  final Future<void> Function(String, String)? onDelete;
 
   const _SubmissionListTile(
-      {required this.submission, required this.onUpdateStatus});
+      {required this.submission, required this.onUpdateStatus, this.onDelete});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => showFilmDetailModal(context, submission, onUpdateStatus),
+      onTap: () => showFilmDetailModal(context, submission, onUpdateStatus,
+          onDelete: onDelete),
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.all(12),
@@ -1242,6 +1748,9 @@ class _SubmissionListTile extends StatelessWidget {
                       _StatusBadge(status: submission.status),
                     ],
                   ),
+                  // ✅ NEW: live AI-analysis progress, visible from the
+                  // All Submissions list without opening the detail modal.
+                  _CbvrProgressBadge(submission: submission),
                   if (submission.note.isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Text('Note: ${submission.note}',
@@ -1261,3 +1770,72 @@ class _SubmissionListTile extends StatelessWidget {
   }
 }
 
+class _PreparingVideoText extends StatefulWidget {
+  final FilmSubmission submission;
+  const _PreparingVideoText({required this.submission});
+
+  @override
+  State<_PreparingVideoText> createState() => _PreparingVideoTextState();
+}
+
+class _PreparingVideoTextState extends State<_PreparingVideoText> {
+  int _progress = 0;
+  bool _loading = true;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetch();
+    if (widget.submission.cbvrStatus == 'waiting' ||
+        widget.submission.cbvrStatus == 'downloading') {
+      _timer = Timer.periodic(const Duration(seconds: 3), (_) => _fetch());
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _fetch() async {
+    if (widget.submission.videoUrl == null) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+    try {
+      final uri = Uri.parse(widget.submission.videoUrl!);
+      final segments = uri.pathSegments;
+      if (segments.length >= 2) {
+        final guid = segments[segments.length - 2];
+        final data = await BunnyService.getVideoStatus(guid);
+        if (mounted) {
+          setState(() {
+            _progress = data['encodeProgress'] ?? 0;
+            _loading = false;
+          });
+        }
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.submission.cbvrStatus == 'downloading') {
+      return Text(
+          '⬇️ Preparing video...${!_loading && _progress > 0 ? " $_progress%" : ""}',
+          style: const TextStyle(
+              color: _pendingColor, fontSize: 13, fontWeight: FontWeight.w600));
+    }
+    return Text(
+      _loading
+          ? '⏳ Waiting for video to encode...'
+          : '⏳ Waiting for video to encode... $_progress%',
+      style: const TextStyle(
+          color: _pendingColor, fontSize: 13, fontWeight: FontWeight.w600),
+    );
+  }
+}

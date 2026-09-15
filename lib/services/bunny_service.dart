@@ -27,6 +27,11 @@ class BunnyService {
         'Content-Type': 'application/json',
       },
       body: jsonEncode({'title': title}),
+    ).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => throw Exception(
+        'Bunny.net timed out after 30 seconds. Check your internet connection or API credentials.',
+      ),
     );
 
     if (response.statusCode == 200 || response.statusCode == 201) {
@@ -113,8 +118,24 @@ class BunnyService {
     }
   }
 
+  /// Delete a video from Bunny.net Stream (called when a film is deleted)
+  static Future<void> deleteVideo(String guid) async {
+    final url = Uri.parse('$_baseUrl/$bunnyLibraryId/videos/$guid');
+    final response = await http.delete(
+      url,
+      headers: {
+        'AccessKey': bunnyAccessKey,
+        'Accept': 'application/json',
+      },
+    );
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw Exception(
+          'Failed to delete video from Bunny.net: ${response.statusCode} - ${response.body}');
+    }
+  }
+
   /// Check the encoding status of the video
-  static Future<int> getVideoStatus(String guid) async {
+  static Future<Map<String, dynamic>> getVideoStatus(String guid) async {
     final url = Uri.parse('$_baseUrl/$bunnyLibraryId/videos/$guid');
     final response = await http.get(
       url,
@@ -126,8 +147,11 @@ class BunnyService {
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
-      return data['status'] as int; // 3 means finished
+      return {
+        'status': data['status'] as int,
+        'encodeProgress': data['encodeProgress'] ?? 0,
+      };
     }
-    return -1; // Unknown error
+    return {'status': -1, 'encodeProgress': 0}; // Unknown error
   }
 }

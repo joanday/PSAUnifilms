@@ -18,6 +18,9 @@ class Film {
   final List<String> aiKeywords;
   final bool isOldDocumentary;
   final String visualDescription; // Gemini Vision analysis of actual video content
+  final List<String> cbvrKeywords;
+  final String cbvrSummary; // The real summary from Gemini Video API
+  final String cbvrStatus; // e.g. processing, completed, failed
 
   const Film({
     required this.id,
@@ -37,10 +40,25 @@ class Film {
     this.aiKeywords = const [],
     this.isOldDocumentary = false,
     this.visualDescription = '',
+    this.cbvrKeywords = const [],
+    this.cbvrSummary = '',
+    this.cbvrStatus = '',
   });
 
   factory Film.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
+    
+    List<String> parsedCbvrKeywords = [];
+    String parsedCbvrSummary = '';
+    if (data['cbvrData'] is Map) {
+      if (data['cbvrData']['searchKeywords'] != null) {
+        parsedCbvrKeywords = List<String>.from(data['cbvrData']['searchKeywords']);
+      }
+      if (data['cbvrData']['transcriptSummary'] != null) {
+        parsedCbvrSummary = data['cbvrData']['transcriptSummary'] as String;
+      }
+    }
+
     return Film(
       id: doc.id,
       title: data['title'] ?? '',
@@ -63,6 +81,9 @@ class Film {
       aiKeywords: List<String>.from(data['aiKeywords'] ?? []),
       isOldDocumentary: data['isOldDocumentary'] ?? false,
       visualDescription: data['visualDescription'] ?? '',
+      cbvrKeywords: parsedCbvrKeywords,
+      cbvrSummary: parsedCbvrSummary,
+      cbvrStatus: data['cbvrStatus'] ?? '',
     );
   }
 }

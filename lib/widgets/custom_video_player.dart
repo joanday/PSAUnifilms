@@ -45,7 +45,20 @@ class _CustomVideoPlayerState extends State<CustomVideoPlayer> {
       if (widget.videoFile != null) {
         _videoPlayerController = VideoPlayerController.file(widget.videoFile!);
       } else {
-        _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl!));
+        VideoFormat? formatHint;
+        String finalUrl = widget.videoUrl!;
+        
+        // Ensure HLS format is explicitly hinted for Bunny.net adaptive streams
+        // to prevent ExoPlayer from failing during chunk transitions.
+        if (finalUrl.toLowerCase().contains('.m3u8')) {
+          formatHint = VideoFormat.hls;
+        }
+        
+        _videoPlayerController = VideoPlayerController.networkUrl(
+          Uri.parse(finalUrl),
+          formatHint: formatHint,
+          videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true, allowBackgroundPlayback: false),
+        );
       }
       await _videoPlayerController.initialize();
       

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -9,7 +10,12 @@ import 'cbvr_search_screen.dart';
 
 class SearchScreen extends StatefulWidget {
   final String initialGenre;
-  const SearchScreen({super.key, this.initialGenre = 'All'});
+  final bool isViewAllMode;
+  const SearchScreen({
+    super.key,
+    this.initialGenre = 'All',
+    this.isViewAllMode = false,
+  });
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -21,11 +27,11 @@ class _SearchScreenState extends State<SearchScreen> {
   late String _selectedGenre;
 
   // ── CBVR state ──────────────────────────────────────────────
-  bool _smartSearchEnabled = false;
   bool _cbvrLoading = false;
   String? _cbvrError;
   List<CbvrResult> _cbvrResults = [];
   String _lastCbvrQuery = ''; // the query that produced the current results
+  Timer? _debounce;
   // ────────────────────────────────────────────────────────────
 
   @override
@@ -51,9 +57,11 @@ class _SearchScreenState extends State<SearchScreen> {
       final q = _query.toLowerCase();
       final matchesQuery = _query.isEmpty ||
           film.title.toLowerCase().contains(q) ||
+          film.director.toLowerCase().contains(q) ||
           film.genre.toLowerCase().contains(q) ||
           film.description.toLowerCase().contains(q) ||
-          film.aiKeywords.any((k) => k.toLowerCase().contains(q));
+          film.aiKeywords.any((k) => k.toLowerCase().contains(q)) ||
+          film.cbvrKeywords.any((k) => k.toLowerCase().contains(q));
       final matchesGenre =
           _selectedGenre == 'All' || film.genre == _selectedGenre;
       return matchesQuery && matchesGenre;
@@ -89,6 +97,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -105,9 +114,9 @@ class _SearchScreenState extends State<SearchScreen> {
               color: Colors.white, size: 18),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          'Search',
-          style: TextStyle(
+        title: Text(
+          widget.isViewAllMode ? 'View All' : 'Search',
+          style: const TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w700,
               color: Color(0xFF4CAF50)),
@@ -123,7 +132,8 @@ class _SearchScreenState extends State<SearchScreen> {
           return Column(
             children: [
               // ── Search bar ───────────────────────────────────────
-              Padding(
+              if (!widget.isViewAllMode)
+                Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
                 child: Container(
                   decoration: BoxDecoration(
@@ -137,21 +147,31 @@ class _SearchScreenState extends State<SearchScreen> {
                     onChanged: (v) {
                       setState(() {
                         _query = v;
-                        // Clear CBVR results when query changes
-                        if (_smartSearchEnabled) {
+                      });
+                      if (_debounce?.isActive ?? false) _debounce!.cancel();
+                      if (v.trim().isEmpty) {
+                        setState(() {
                           _cbvrResults = [];
-                          _cbvrError = null;
+                          _lastCbvrQuery = '';
+                          _cbvrLoading = false;
+                        });
+                        return;
+                      }
+                      _debounce = Timer(const Duration(milliseconds: 800), () {
+                        if (_query.trim().isNotEmpty) {
+                          _runSmartSearch(allFilms);
                         }
                       });
                     },
                     onSubmitted: (_) {
-                      if (_smartSearchEnabled) _runSmartSearch(allFilms);
+                      if (_debounce?.isActive ?? false) _debounce!.cancel();
+                      if (_query.trim().isNotEmpty) {
+                        _runSmartSearch(allFilms);
+                      }
                     },
                     textInputAction: TextInputAction.search,
                     decoration: InputDecoration(
-                      hintText: _smartSearchEnabled
-                          ? 'Describe what you\'re looking for...'
-                          : 'Search films, genres...',
+                      hintText: 'Search films, genres, themes...',
                       hintStyle: const TextStyle(
                           color: Colors.white38, fontSize: 14),
                       prefixIcon: const Icon(Icons.search,
@@ -166,6 +186,7 @@ class _SearchScreenState extends State<SearchScreen> {
                                   _query = '';
                                   _cbvrResults = [];
                                   _cbvrError = null;
+                                  _lastCbvrQuery = '';
                                 });
                               },
                             )
@@ -177,176 +198,12 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                 ),
               ),
+              if (!widget.isViewAllMode) const SizedBox(height: 8),
 
-              // ── Smart Search toggle row ──────────────────────────
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                child: Row(
-                  children: [
-                    // Toggle chip
-                    GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _smartSearchEnabled = !_smartSearchEnabled;
-                          _cbvrResults = [];
-                          _cbvrError = null;
-                        });
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 220),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: _smartSearchEnabled
-                              ? const Color(0xFF4CAF50).withValues(alpha: 0.18)
-                              : const Color(0xFF1A2E22),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: _smartSearchEnabled
-                                ? const Color(0xFF4CAF50)
-                                : const Color(0xFF2A4535),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.auto_awesome,
-                              size: 13,
-                              color: _smartSearchEnabled
-                                  ? const Color(0xFF4CAF50)
-                                  : Colors.white38,
-                            ),
-                            const SizedBox(width: 5),
-                            Text(
-                              'Smart Search',
-                              style: TextStyle(
-                                color: _smartSearchEnabled
-                                    ? const Color(0xFF4CAF50)
-                                    : Colors.white38,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(width: 5),
-                            AnimatedRotation(
-                              turns: _smartSearchEnabled ? 0 : 0.5,
-                              duration: const Duration(milliseconds: 220),
-                              child: Icon(
-                                Icons.keyboard_arrow_down,
-                                size: 14,
-                                color: _smartSearchEnabled
-                                    ? const Color(0xFF4CAF50)
-                                    : Colors.white38,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+              if (!widget.isViewAllMode) const SizedBox(height: 10),
 
-                    const SizedBox(width: 8),
-
-                    // "Search" button (only shown in Smart Search mode)
-                    if (_smartSearchEnabled) ...[
-                      Expanded(
-                        child: Align(
-                          alignment: Alignment.centerRight,
-                          child: GestureDetector(
-                            onTap: () {
-                              if (allFilms.isEmpty || _query.trim().isEmpty) return;
-                              FocusScope.of(context).unfocus();
-                              _runSmartSearch(allFilms);
-                            },
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: _cbvrLoading || _query.trim().isEmpty
-                                    ? Colors.white12
-                                    : const Color(0xFF4CAF50),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: _cbvrLoading
-                                  ? const SizedBox(
-                                      width: 14,
-                                      height: 14,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                                Colors.white54),
-                                      ),
-                                    )
-                                  : const Text(
-                                      'Search',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ] else ...[
-                      Expanded(
-                        child: Align(
-                          alignment: Alignment.centerRight,
-                          child: GestureDetector(
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => const CbvrSearchScreen(),
-                                ),
-                              );
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: Colors.blueAccent.withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: Colors.blueAccent),
-                              ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.video_library, size: 13, color: Colors.blueAccent),
-                                  SizedBox(width: 5),
-                                  Text(
-                                    'Deep Video Search',
-                                    style: TextStyle(
-                                      color: Colors.blueAccent,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      // Powered by hint
-                      Expanded(
-                        child: Text(
-                          'Tap ✨ Smart Search to find by description',
-                          style: const TextStyle(
-                              color: Colors.white24, fontSize: 11),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-
-              // ── Genre filter chips (only in normal mode) ─────────
-              if (!_smartSearchEnabled) ...[
+              // ── Genre filter chips (only shown when not searching) ─────────
+              if (_query.isEmpty) ...[
                 SizedBox(
                   height: 36,
                   child: ListView.builder(
@@ -402,7 +259,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   child:
                       CircularProgressIndicator(color: Color(0xFF4CAF50)),
                 )
-              else if (_smartSearchEnabled)
+              else if (_query.isNotEmpty)
                 _buildSmartResults(allFilms)
               else ...[
                 Padding(
@@ -447,134 +304,31 @@ class _SearchScreenState extends State<SearchScreen> {
 
   // ── Smart Search result panel ──────────────────────────────────
   Widget _buildSmartResults(List<Film> allFilms) {
-    // Loading state
-    if (_cbvrLoading) {
-      return Expanded(
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(
-                width: 40,
-                height: 40,
-                child: CircularProgressIndicator(
-                  color: Color(0xFF4CAF50),
-                  strokeWidth: 3,
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Analyzing with AI...',
-                style: TextStyle(color: Colors.white54, fontSize: 14),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'Finding the most relevant films for you',
-                style: TextStyle(color: Colors.white24, fontSize: 12),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
+    // 1. Get Local Results
+    final localResults = allFilms.where((film) {
+      final q = _query.toLowerCase();
+      if (q.isEmpty) return false;
+      return film.title.toLowerCase().contains(q) ||
+          film.director.toLowerCase().contains(q) ||
+          film.genre.toLowerCase().contains(q) ||
+          film.description.toLowerCase().contains(q) ||
+          film.aiKeywords.any((k) => k.toLowerCase().contains(q)) ||
+          film.cbvrKeywords.any((k) => k.toLowerCase().contains(q));
+    }).toList();
 
-    // Error state
-    if (_cbvrError != null) {
-      return Expanded(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.error_outline,
-                    color: Color(0xFFEF5350), size: 48),
-                const SizedBox(height: 12),
-                const Text(
-                  'Smart Search failed',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  _cbvrError!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      color: Colors.white38, fontSize: 12, height: 1.5),
-                ),
-                const SizedBox(height: 16),
-                GestureDetector(
-                  onTap: () => _runSmartSearch(allFilms),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 10),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: const Color(0xFF4CAF50)),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Text(
-                      'Try Again',
-                      style: TextStyle(
-                          color: Color(0xFF4CAF50),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
+    // 2. Get Unique AI Results
+    final localIds = localResults.map((f) => f.id).toSet();
+    final uniqueCbvr = _cbvrResults
+        .where((r) => !localIds.contains(r.filmId))
+        .toList();
+    final filmMap = {for (final f in allFilms) f.id: f};
 
-    // Idle — no search run yet
-    if (_cbvrResults.isEmpty && _lastCbvrQuery.isEmpty) {
-      return Expanded(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF4CAF50).withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                        color: const Color(0xFF4CAF50).withValues(alpha: 0.3)),
-                  ),
-                  child: const Icon(Icons.auto_awesome,
-                      color: Color(0xFF4CAF50), size: 32),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Smart Search is ON',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Describe what you\'re looking for in plain language — like "rice farming documentary" or "graduation ceremony film" — and AI will find the most relevant matches.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                      color: Colors.white38, fontSize: 13, height: 1.5),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    // No results after search
-    if (_cbvrResults.isEmpty) {
+    // If completely empty (no local, no AI, no loading, no error)
+    if (localResults.isEmpty &&
+        uniqueCbvr.isEmpty &&
+        !_cbvrLoading &&
+        _lastCbvrQuery.isNotEmpty &&
+        _cbvrError == null) {
       return Expanded(
         child: Center(
           child: Padding(
@@ -586,7 +340,7 @@ class _SearchScreenState extends State<SearchScreen> {
                     color: Colors.white24, size: 56),
                 const SizedBox(height: 12),
                 Text(
-                  'No matches for "$_lastCbvrQuery"',
+                  'No matches for "$_query"',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                       color: Colors.white54,
@@ -606,54 +360,181 @@ class _SearchScreenState extends State<SearchScreen> {
       );
     }
 
-    // Build a film ID → Film lookup map for fast access
-    final filmMap = {for (final f in allFilms) f.id: f};
-
     return Expanded(
-      child: Column(
-        children: [
-          // Header row
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Row(
-              children: [
-                const Icon(Icons.auto_awesome,
-                    color: Color(0xFF4CAF50), size: 14),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    '${_cbvrResults.length} AI result${_cbvrResults.length != 1 ? 's' : ''} for "$_lastCbvrQuery"',
-                    style: const TextStyle(
-                        color: Colors.white54, fontSize: 13),
-                    overflow: TextOverflow.ellipsis,
+      child: CustomScrollView(
+        slivers: [
+          // Loading indicator
+          if (_cbvrLoading)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 40),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      SizedBox(
+                        width: 40,
+                        height: 40,
+                        child: CircularProgressIndicator(
+                          color: Color(0xFF4CAF50),
+                          strokeWidth: 3,
+                        ),
+                      ),
+                      SizedBox(height: 16),
+                      Text(
+                        'Analyzing with AI...',
+                        style: TextStyle(
+                            color: Colors.white54, fontSize: 14),
+                      ),
+                      SizedBox(height: 6),
+                      Text(
+                        'Finding the most relevant films for you',
+                        style: TextStyle(
+                            color: Colors.white24, fontSize: 12),
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
-          ),
 
-          // Result cards list
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: _cbvrResults.length,
-              itemBuilder: (_, i) {
-                final cbvrResult = _cbvrResults[i];
-                final film = filmMap[cbvrResult.filmId];
-                if (film == null) return const SizedBox.shrink();
-                return CbvrResultCard(
-                  film: film,
-                  result: cbvrResult,
-                  animationIndex: i,
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => FilmDetailScreen(film: film)),
-                  ),
-                );
-              },
+          // Error
+          if (_cbvrError != null)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.error_outline,
+                        color: Color(0xFFEF5350), size: 48),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Smart Search failed',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _cbvrError!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          color: Colors.white38,
+                          fontSize: 12,
+                          height: 1.5),
+                    ),
+                    const SizedBox(height: 16),
+                    GestureDetector(
+                      onTap: () => _runSmartSearch(allFilms),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 10),
+                        decoration: BoxDecoration(
+                          border:
+                              Border.all(color: const Color(0xFF4CAF50)),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Text(
+                          'Try Again',
+                          style: TextStyle(
+                              color: Color(0xFF4CAF50),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
+
+          // Local Results Header
+          if (localResults.isNotEmpty)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: Text(
+                  '${localResults.length} local result${localResults.length == 1 ? '' : 's'} for "$_query"',
+                  style: const TextStyle(
+                      color: Colors.white54, fontSize: 13),
+                ),
+              ),
+            ),
+
+          // Local Results Grid
+          if (localResults.isNotEmpty)
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              sliver: SliverGrid(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 0.65,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  (_, i) => _filmCard(localResults[i]),
+                  childCount: localResults.length,
+                ),
+              ),
+            ),
+
+          // Space between lists
+          if (localResults.isNotEmpty && uniqueCbvr.isNotEmpty)
+            const SliverToBoxAdapter(child: SizedBox(height: 24)),
+
+          // AI Results Header
+          if (uniqueCbvr.isNotEmpty)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.auto_awesome,
+                        color: Color(0xFF4CAF50), size: 14),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        '${uniqueCbvr.length} AI result${uniqueCbvr.length != 1 ? 's' : ''} for "$_query"',
+                        style: const TextStyle(
+                            color: Colors.white54, fontSize: 13),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // AI Results List
+          if (uniqueCbvr.isNotEmpty)
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (_, i) {
+                  final r = uniqueCbvr[i];
+                  final film = filmMap[r.filmId];
+                  if (film == null) return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: CbvrResultCard(
+                      film: film,
+                      result: r,
+                      animationIndex: i,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => FilmDetailScreen(film: film)),
+                      ),
+                    ),
+                  );
+                },
+                childCount: uniqueCbvr.length,
+              ),
+            ),
+
+          const SliverToBoxAdapter(child: SizedBox(height: 40)),
         ],
       ),
     );
@@ -696,7 +577,21 @@ class _SearchScreenState extends State<SearchScreen> {
           children: [
             film.thumbnailUrl.isNotEmpty
                 ? CachedNetworkImage(
-                    imageUrl: film.thumbnailUrl, fit: BoxFit.cover)
+                    imageUrl: film.thumbnailUrl,
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) => Container(
+                      color: const Color(0xFF1A3528),
+                      child: const Center(
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white54),
+                      ),
+                    ),
+                    errorWidget: (_, __, ___) => Container(
+                      color: const Color(0xFF1A3528),
+                      child: const Center(
+                        child: Icon(Icons.movie_creation_outlined, color: Colors.white54, size: 24),
+                      ),
+                    ),
+                  )
                 : Container(color: const Color(0xFF1A3528)),
             Positioned(
               bottom: 0,

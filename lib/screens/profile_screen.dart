@@ -1,9 +1,15 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import '../models/film.dart';
 import '../theme/app_theme.dart';
+import '../widgets/user_avatar.dart';
 import 'account_settings_screen.dart';
 import 'change_password_screen.dart';
 import 'my_submissions_screen.dart';
@@ -84,6 +90,139 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return name.isNotEmpty ? name[0].toUpperCase() : '?';
   }
 
+  void _showAvatarOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.bgCard,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: AppTheme.greenPrime),
+              title: const Text('Upload New Picture', style: TextStyle(color: AppTheme.textPrimary)),
+              onTap: () {
+                Navigator.pop(context);
+                _pickAndUploadImage();
+              },
+            ),
+            if (FirebaseAuth.instance.currentUser?.photoURL != null)
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: AppTheme.redDecline),
+                title: const Text('Remove Picture', style: TextStyle(color: AppTheme.redDecline)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _removeAvatar();
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickAndUploadImage() async {
+    try {
+      final picker = ImagePicker();
+      final XFile? image = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 80,
+      );
+
+      if (image == null) return;
+
+      final CroppedFile? croppedFile = await ImageCropper().cropImage(
+        sourcePath: image.path,
+        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+        uiSettings: [
+          AndroidUiSettings(
+              toolbarTitle: 'Crop Picture',
+              toolbarColor: AppTheme.bgCard,
+              toolbarWidgetColor: AppTheme.greenPrime,
+              activeControlsWidgetColor: AppTheme.greenPrime,
+              initAspectRatio: CropAspectRatioPreset.square,
+              lockAspectRatio: true,
+              hideBottomControls: false),
+          IOSUiSettings(
+            title: 'Crop Picture',
+            aspectRatioLockEnabled: true,
+            resetAspectRatioEnabled: false,
+          ),
+        ],
+      );
+
+      if (croppedFile == null) return;
+
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      // Show loading indicator
+      if (mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => const Center(child: CircularProgressIndicator(color: AppTheme.greenPrime)),
+        );
+      }
+
+      final storageRef = FirebaseStorage.instance.ref().child('users/${user.uid}/avatar.jpg');
+      await storageRef.putFile(File(croppedFile.path));
+      final downloadUrl = await storageRef.getDownloadURL();
+
+      await user.updatePhotoURL(downloadUrl);
+      
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+        setState(() {}); // Refresh UI
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to upload image: $e')));
+      }
+    }
+  }
+
+  Future<void> _removeAvatar() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      // Show loading indicator
+      if (mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => const Center(child: CircularProgressIndicator(color: AppTheme.greenPrime)),
+        );
+      }
+
+      try {
+        final storageRef = FirebaseStorage.instance.ref().child('users/${user.uid}/avatar.jpg');
+        await storageRef.delete();
+      } catch (e) {
+        // Ignore if file doesn't exist
+      }
+
+      await user.updatePhotoURL(null);
+      
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+        setState(() {}); // Refresh UI
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to remove image: $e')));
+      }
+    }
+  }
+
   void _showHelpSupport() {
     showModalBottomSheet(
       context: context,
@@ -105,7 +244,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const Text('For assistance, contact us at:',
                 style: TextStyle(color: AppTheme.textMuted, fontSize: 13)),
             const SizedBox(height: 8),
-            const Text('support@psaunifilms.com',
+            const Text('psaunifilms.support@gmail.com',
                 style: TextStyle(
                     color: Color(0xFF4CAF50),
                     fontSize: 14,
@@ -113,10 +252,98 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 8),
             const Text('We typically respond within 24 hours.',
                 style: TextStyle(color: AppTheme.textMuted, fontSize: 13)),
-            const SizedBox(height: 24),
+            const SizedBox(height: 32),
           ],
         ),
       ),
+    );
+  }
+
+  void _showAbout() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppTheme.bgCard,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => Padding(
+        padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+            left: 24,
+            right: 24,
+            top: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppTheme.greenPrime.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.info_outline, color: AppTheme.greenPrime),
+                ),
+                const SizedBox(width: 12),
+                const Text('About PSAUniFilms',
+                    style: TextStyle(
+                        color: AppTheme.textPrimary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600)),
+              ],
+            ),
+            const SizedBox(height: 24),
+            const Text('App Purpose',
+                style: TextStyle(
+                    color: AppTheme.greenPrime,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.2)),
+            const SizedBox(height: 8),
+            const Text(
+                'PSAUniFilms was developed as a Capstone Project for the DevCom/CAS department of Pampanga State Agricultural University. It serves as a modern, centralized digital archive designed to preserve, showcase, and semantically search student-produced documentaries.',
+                style: TextStyle(color: AppTheme.textMuted, fontSize: 13, height: 1.5)),
+            const SizedBox(height: 24),
+            const Text('The Developers',
+                style: TextStyle(
+                    color: AppTheme.greenPrime,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.2)),
+            const SizedBox(height: 12),
+            _developerRow('Mimosa B. Costales', 'Lead UI Designer'),
+            const SizedBox(height: 12),
+            _developerRow('Joan Marie Y. Day', 'Backend Developer'),
+            const SizedBox(height: 12),
+            _developerRow('Sherry Herns M. Cruz', 'Project Manager'),
+            const SizedBox(height: 32),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _developerRow(String name, String role) {
+    return Row(
+      children: [
+        const Icon(Icons.person, color: AppTheme.textMuted, size: 16),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(name,
+              style: const TextStyle(
+                  color: AppTheme.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500)),
+        ),
+        Text(role,
+            style: const TextStyle(
+                color: AppTheme.textMuted,
+                fontSize: 12,
+                fontStyle: FontStyle.italic)),
+      ],
     );
   }
 
@@ -216,33 +443,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Center(
             child: Column(children: [
               const SizedBox(height: 12),
-              Stack(
-                children: [
-                  CircleAvatar(
-                    radius: 48,
-                    backgroundColor: AppTheme.greenMuted,
-                    child: Text(initials,
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 28,
-                            fontWeight: FontWeight.w700)),
-                  ),
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: Container(
-                      width: 28,
-                      height: 28,
-                      decoration: BoxDecoration(
-                          color: AppTheme.greenPrime,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                              color: const Color(0xFF0D1F17), width: 2)),
-                      child: const Icon(Icons.camera_alt_outlined,
-                          size: 14, color: Colors.white),
+              GestureDetector(
+                onTap: _showAvatarOptions,
+                child: Stack(
+                  children: [
+                    const UserAvatar(radius: 48, showInitialsFallback: true),
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                            color: AppTheme.greenPrime,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                                color: const Color(0xFF0D1F17), width: 2)),
+                        child: const Icon(Icons.camera_alt_outlined,
+                            size: 14, color: Colors.white),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
               const SizedBox(height: 12),
               Text(displayName,
@@ -312,7 +534,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _tile(Icons.privacy_tip_outlined, 'Privacy Policy',
                 onTap: _showPrivacyPolicy),
             _tile(Icons.info_outline, 'About PSAUniFilms',
-                subtitle: 'v1.0.0', onTap: () {}),
+                subtitle: 'v1.0.0', onTap: _showAbout),
           ]),
 
           const SizedBox(height: 16),
@@ -331,6 +553,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ]),
 
           const SizedBox(height: 32),
+          const Center(
+            child: Text(
+              '© 2026 PSAUniFilms. All rights reserved.',
+              style: TextStyle(color: Colors.white24, fontSize: 11),
+            ),
+          ),
+          const SizedBox(height: 16),
         ],
       ),
     );
