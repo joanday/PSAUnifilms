@@ -1,16 +1,22 @@
 import 'package:flutter/material.dart';
 import '../widgets/custom_video_player.dart';
+import '../widgets/comment_section.dart';
 
 class WatchScreen extends StatefulWidget {
   final String videoUrl;
   final String title;
   final String description;
+  final String
+      filmId; // Firestore doc id, needed so comments attach to the right film
+  final String aiSummary; // pass film.cbvrSummary or film.aiSummary here
 
   const WatchScreen({
     super.key,
     required this.videoUrl,
     required this.title,
     required this.description,
+    this.filmId = '',
+    this.aiSummary = '',
   });
 
   @override
@@ -20,6 +26,7 @@ class WatchScreen extends StatefulWidget {
 class _WatchScreenState extends State<WatchScreen> {
   String _videoQuality = 'HD (720p)';
   String _subtitleLanguage = 'Filipino';
+  bool _isSummaryExpanded = true;
 
   static const _greenPrime = Color(0xFF4CAF50);
   static const _bgCard = Color(0xFF16241C);
@@ -210,6 +217,58 @@ class _WatchScreenState extends State<WatchScreen> {
                       height: 1.5,
                     ),
                   ),
+                  if (widget.aiSummary.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    const Divider(color: Colors.grey),
+                    const SizedBox(height: 8),
+                    InkWell(
+                      onTap: () => setState(
+                          () => _isSummaryExpanded = !_isSummaryExpanded),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.auto_awesome,
+                              color: _greenPrime, size: 16),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'AI SUMMARY',
+                            style: TextStyle(
+                              color: Colors.grey,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 1,
+                            ),
+                          ),
+                          const Spacer(),
+                          Icon(
+                            _isSummaryExpanded
+                                ? Icons.keyboard_arrow_up
+                                : Icons.keyboard_arrow_down,
+                            color: _textMuted,
+                          ),
+                        ],
+                      ),
+                    ),
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeInOut,
+                      alignment: Alignment.topCenter,
+                      child: _isSummaryExpanded
+                          ? Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Text(
+                                widget.aiSummary,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 15,
+                                  height: 1.5,
+                                ),
+                              ),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                  ],
+                  if (widget.filmId.isNotEmpty)
+                    CommentSection(filmId: widget.filmId),
                 ],
               ),
             ),
