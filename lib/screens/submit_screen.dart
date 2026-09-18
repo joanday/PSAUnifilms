@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../widgets/custom_video_player.dart';
@@ -49,7 +50,11 @@ class _SubmitScreenState extends State<SubmitScreen> {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.video,
       allowMultiple: false,
-      withData: false, // Don't load entire file into memory
+      // On web there's no real filesystem path, so the file's bytes are
+      // the only usable data. On mobile/desktop we keep this false and
+      // stream from the path instead, to avoid loading a huge video
+      // entirely into memory.
+      withData: kIsWeb,
     );
 
     if (result != null && result.files.isNotEmpty) {
@@ -386,7 +391,11 @@ class _SubmitScreenState extends State<SubmitScreen> {
             const SizedBox(height: 24),
 
             // Video Preview
-            if (_selectedVideoFile != null &&
+            // NOTE: `PlatformFile.path` throws on Flutter Web the moment
+            // it's accessed at all (even just to check for null), so we
+            // must never touch `.path` there -- `kIsWeb` is checked first.
+            if (!kIsWeb &&
+                _selectedVideoFile != null &&
                 _selectedVideoFile!.path != null) ...[
               const Text('Preview:',
                   style: TextStyle(
@@ -400,6 +409,14 @@ class _SubmitScreenState extends State<SubmitScreen> {
                 autoPlay: false,
               ),
               const SizedBox(height: 16),
+            ] else if (kIsWeb && _selectedVideoFile != null) ...[
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  'Preview isn\'t available in the browser -- the file is selected and ready to upload.',
+                  style: TextStyle(color: Colors.white38, fontSize: 12),
+                ),
+              ),
             ],
 
             const SizedBox(height: 8),

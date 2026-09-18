@@ -27,6 +27,36 @@ class _CommentSectionState extends State<CommentSection> {
           .doc(widget.filmId)
           .collection('comments');
 
+  Future<String> _resolveUserName(User user) async {
+    // Most apps store the person's real name as a field on their
+    // users/{uid} document rather than Firebase Auth's displayName.
+    // Try the common field names in order, then fall back gracefully.
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      final data = doc.data();
+      if (data != null) {
+        for (final field in ['fullName', 'name', 'username', 'displayName']) {
+          final value = data[field];
+          if (value is String && value.trim().isNotEmpty) {
+            return value.trim();
+          }
+        }
+      }
+    } catch (_) {
+      // fall through to the defaults below
+    }
+    if (user.displayName != null && user.displayName!.trim().isNotEmpty) {
+      return user.displayName!.trim();
+    }
+    if (user.email != null && user.email!.contains('@')) {
+      return user.email!.split('@').first;
+    }
+    return 'Student';
+  }
+
   Future<void> _submitComment() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
@@ -41,11 +71,12 @@ class _CommentSectionState extends State<CommentSection> {
 
     setState(() => _isSubmitting = true);
     try {
+      final userName = await _resolveUserName(user);
       await _commentsRef.add(
         Comment(
           id: '',
           userId: user.uid,
-          userName: user.displayName ?? 'Student',
+          userName: userName,
           text: text,
         ).toFirestore(),
       );
