@@ -632,16 +632,29 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
       backgroundColor: AppTheme.bgDark,
       body: SafeArea(
         bottom: false,
-        child: Column(
-          children: [
-            _buildHeader(false),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: content,
-              ),
-            ),
-          ],
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // The video is forced to a 16:9 ratio based on available width,
+            // which can compute a height taller than the screen itself on a
+            // wide-but-short window (common on desktop/web). Capping it to
+            // half the viewport height guarantees room is always left for
+            // the scrollable content (title, description, comments) below.
+            final maxHeaderHeight = constraints.maxHeight * 0.5;
+            return Column(
+              children: [
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: maxHeaderHeight),
+                  child: _buildHeader(false),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: content,
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
