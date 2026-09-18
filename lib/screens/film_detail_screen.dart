@@ -280,12 +280,12 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final mediaQuery = MediaQuery.of(context);
-    // A maximized desktop/web browser window is also "landscape" by aspect
-    // ratio alone, so gate the immersive video-only layout on screen width
-    // too -- it should only kick in for an actual phone rotated sideways.
-    final isLandscape = mediaQuery.orientation == Orientation.landscape &&
-        mediaQuery.size.shortestSide < 600;
+    // NOTE: we previously auto-switched to a video-only "immersive" layout
+    // based on device orientation + screen size, but that heuristic isn't
+    // reliable on Flutter Web (browser/OS display scaling can make a
+    // maximized desktop window look "phone landscape" in logical pixels).
+    // The scrollable layout below is now always used; CustomVideoPlayer's
+    // own fullscreen button handles the "big video" experience instead.
 
     Widget content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -628,20 +628,13 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
       ],
     );
 
-    if (isLandscape) {
-      return Scaffold(
-        backgroundColor: Colors.black,
-        body: _buildHeader(isLandscape),
-      );
-    }
-
     return Scaffold(
       backgroundColor: AppTheme.bgDark,
       body: SafeArea(
         bottom: false,
         child: Column(
           children: [
-            _buildHeader(isLandscape),
+            _buildHeader(false),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(16),
