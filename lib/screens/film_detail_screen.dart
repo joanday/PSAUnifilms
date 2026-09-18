@@ -280,8 +280,12 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isLandscape =
-        MediaQuery.of(context).orientation == Orientation.landscape;
+    final mediaQuery = MediaQuery.of(context);
+    // A maximized desktop/web browser window is also "landscape" by aspect
+    // ratio alone, so gate the immersive video-only layout on screen width
+    // too -- it should only kick in for an actual phone rotated sideways.
+    final isLandscape = mediaQuery.orientation == Orientation.landscape &&
+        mediaQuery.size.shortestSide < 600;
 
     Widget content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
