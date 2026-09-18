@@ -24,6 +24,18 @@ service cloud.firestore {
         allow update, delete: if request.auth != null &&
           resource.data.userId == request.auth.uid;
       }
+
+      // 1-5 star ratings, one document per rating user. Anyone can read
+      // (for the average); a user can only ever write their own rating.
+      match /ratings/{userId} {
+        allow read: if true;
+        allow create, update: if request.auth != null &&
+          request.auth.uid == userId &&
+          request.resource.data.rating is int &&
+          request.resource.data.rating >= 1 &&
+          request.resource.data.rating <= 5;
+        allow delete: if request.auth != null && request.auth.uid == userId;
+      }
     }
 
     // Users collection — any authenticated user can read their own doc,

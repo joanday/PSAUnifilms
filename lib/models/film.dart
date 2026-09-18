@@ -7,6 +7,7 @@ class Film {
   final int year;
   final String genre;
   final double rating;
+  final int ratingCount;
   final String thumbnailUrl;
   final String description;
   final String videoUrl;
@@ -17,7 +18,8 @@ class Film {
   final String aiSummary;
   final List<String> aiKeywords;
   final bool isOldDocumentary;
-  final String visualDescription; // Gemini Vision analysis of actual video content
+  final String
+      visualDescription; // Gemini Vision analysis of actual video content
   final List<String> cbvrKeywords;
   final String cbvrSummary; // The real summary from Gemini Video API
   final String cbvrStatus; // e.g. processing, completed, failed
@@ -29,6 +31,7 @@ class Film {
     required this.year,
     required this.genre,
     required this.rating,
+    this.ratingCount = 0,
     required this.thumbnailUrl,
     required this.description,
     required this.videoUrl,
@@ -47,12 +50,13 @@ class Film {
 
   factory Film.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
-    
+
     List<String> parsedCbvrKeywords = [];
     String parsedCbvrSummary = '';
     if (data['cbvrData'] is Map) {
       if (data['cbvrData']['searchKeywords'] != null) {
-        parsedCbvrKeywords = List<String>.from(data['cbvrData']['searchKeywords']);
+        parsedCbvrKeywords =
+            List<String>.from(data['cbvrData']['searchKeywords']);
       }
       if (data['cbvrData']['transcriptSummary'] != null) {
         parsedCbvrSummary = data['cbvrData']['transcriptSummary'] as String;
@@ -70,6 +74,9 @@ class Film {
           : 2024,
       genre: data['genre'] ?? 'Documentary',
       rating: data['rating'] != null ? (data['rating'] as num).toDouble() : 0.0,
+      ratingCount: data['ratingCount'] != null
+          ? (data['ratingCount'] as num).toInt()
+          : 0,
       thumbnailUrl: data['thumbnail'] ?? data['thumbnailUrl'] ?? '',
       description: data['description'] ?? '',
       videoUrl: data['videoUrl'] ?? '',

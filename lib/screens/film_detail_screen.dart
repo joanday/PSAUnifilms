@@ -8,6 +8,7 @@ import '../widgets/custom_video_player.dart';
 import '../services/ai_service.dart';
 import '../services/bunny_service.dart';
 import '../widgets/comment_section.dart';
+import '../widgets/star_rating.dart';
 
 class FilmDetailScreen extends StatefulWidget {
   final Film film;
@@ -337,6 +338,14 @@ class _FilmDetailScreenState extends State<FilmDetailScreen> {
               ],
             ),
           ),
+
+        const SizedBox(height: 4),
+        StarRating(
+          filmId: widget.film.id,
+          averageRating: widget.film.rating,
+          ratingCount: widget.film.ratingCount,
+        ),
+        const SizedBox(height: 16),
 
         // Watchlist Button
         SizedBox(
