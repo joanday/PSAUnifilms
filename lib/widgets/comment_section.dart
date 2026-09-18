@@ -83,9 +83,11 @@ class _CommentSectionState extends State<CommentSection> {
       _controller.clear();
       FocusScope.of(context).unfocus();
     } catch (e) {
+      debugPrint('Failed to post comment: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to post comment: $e')),
+          const SnackBar(
+              content: Text('Couldn\'t post your comment. Please try again.')),
         );
       }
     } finally {

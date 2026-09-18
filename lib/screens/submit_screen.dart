@@ -167,10 +167,13 @@ class _SubmitScreenState extends State<SubmitScreen> {
         );
       }
     } catch (e) {
+      // Real error goes to the console for debugging, not to the user.
+      debugPrint('Submission failed: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Submission failed: $e'),
+          const SnackBar(
+            content: Text(
+                'Something went wrong while submitting your film. Please try again.'),
             backgroundColor: Colors.red,
           ),
         );
