@@ -25,7 +25,7 @@
             </intent-filter>
         </activity>
 
-        <!-- Required by the image_cropper package -- this is the crop screen
+                <!-- Required by the image_cropper package: this is the crop screen
              it opens after you pick a photo. It was missing, which is why
              setting a profile picture crashed the app back to the phone's
              home screen. -->

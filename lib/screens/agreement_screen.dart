@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'public_nav_screen.dart';
-import 'login_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AgreementScreen extends StatelessWidget {
   const AgreementScreen({super.key});
@@ -112,20 +111,13 @@ class AgreementScreen extends StatelessWidget {
                             fontSize: 16, fontWeight: FontWeight.w600),
                       ),
                       onPressed: () {
-                        // signup_screen.dart now keeps the user signed in,
-                        // and every new signup is created with role:
-                        // 'Viewer' — so it's safe to route straight to
-                        // PublicNavScreen without a role lookup here.
-                        // If an officer later promotes this account to
-                        // 'CAS Student', that only takes effect on their
-                        // NEXT login (via _RoleGate in main.dart), not
-                        // retroactively in this already-open session.
-                        Navigator.pushAndRemoveUntil(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) => const PublicNavScreen()),
-                          (route) => false,
-                        );
+                        // Pop back to _RoleGate (main.dart) instead of
+                        // pushing+wiping the stack -- _RoleGate is still
+                        // alive underneath (signup_screen.dart no longer
+                        // destroys it), so it already knows this Viewer
+                        // is signed in and will show PublicNavScreen the
+                        // moment we reveal it.
+                        Navigator.popUntil(context, (route) => route.isFirst);
                       },
                       child: const Text('Agree'),
                     ),
@@ -146,29 +138,41 @@ class AgreementScreen extends StatelessWidget {
                             fontSize: 16, fontWeight: FontWeight.w600),
                       ),
                       onPressed: () async {
-                        // The user is already signed in to Firebase Auth
-                        // by the time they reach this screen (see
-                        // signup_screen.dart). Declining the agreement
-                        // means they should NOT remain authenticated —
-                        // otherwise _RoleGate in main.dart will just log
-                        // them back in automatically on next launch.
-                        //
-                        // We also can't rely on Navigator.pop(context)
-                        // here: the route that led to this screen may
-                        // have been pushed with pushAndRemoveUntil,
-                        // which clears everything below it, leaving
-                        // nothing underneath to pop back to (this was
-                        // causing the black screen bug).
-                        await FirebaseAuth.instance.signOut();
+                        // Declining must fully undo what signup_screen.dart
+                        // just created -- just signing out isn't enough,
+                        // because the Auth account + Firestore profile
+                        // would still exist, so typing the same
+                        // email/password on the login screen would just
+                        // log back into the "declined" account instead of
+                        // properly rejecting it.
+                        final user = FirebaseAuth.instance.currentUser;
+                        try {
+                          if (user != null) {
+                            final uid = user.uid;
+                            try {
+                              await FirebaseFirestore.instance
+                                  .collection('users')
+                                  .doc(uid)
+                                  .delete();
+                            } catch (_) {
+                              // Non-fatal -- worst case an orphaned
+                              // profile doc is left behind; still proceed
+                              // to delete the Auth account below.
+                            }
+                            await user.delete();
+                          }
+                        } catch (_) {
+                          await FirebaseAuth.instance.signOut();
+                        }
 
                         if (!context.mounted) return;
 
-                        Navigator.pushAndRemoveUntil(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) => const LoginScreen()),
-                          (route) => false,
-                        );
+                        // Same reasoning as Agree above: pop back to the
+                        // still-alive _RoleGate rather than pushing a new
+                        // LoginScreen and wiping the stack. _RoleGate will
+                        // already be showing LoginScreen since the user is
+                        // no longer signed in.
+                        Navigator.popUntil(context, (route) => route.isFirst);
                       },
                       child: const Text('Decline'),
                     ),

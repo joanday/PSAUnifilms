@@ -19,7 +19,9 @@ class WatchlistScreen extends StatelessWidget {
       return Scaffold(
         backgroundColor: const Color(0xFF0D1F17),
         appBar: AppBar(
-          title: const Text('My Watchlist', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+          title: const Text('My Watchlist',
+              style:
+                  TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
           backgroundColor: const Color(0xFF0D1F17),
           elevation: 0,
         ),
@@ -37,7 +39,8 @@ class WatchlistScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: const Color(0xFF0D1F17),
       appBar: AppBar(
-        title: const Text('My Watchlist', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+        title: const Text('My Watchlist',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
         backgroundColor: const Color(0xFF0D1F17),
         elevation: 0,
       ),
@@ -77,7 +80,10 @@ class WatchlistScreen extends StatelessWidget {
                   SizedBox(height: 12),
                   Text(
                     'No films saved yet',
-                    style: TextStyle(color: Colors.white54, fontSize: 16, fontWeight: FontWeight.w500),
+                    style: TextStyle(
+                        color: Colors.white54,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500),
                   ),
                   SizedBox(height: 4),
                   Text(
@@ -132,14 +138,19 @@ class _WatchlistCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance.collection('films').doc(film.id).snapshots(),
+      stream: FirebaseFirestore.instance
+          .collection('films')
+          .doc(film.id)
+          .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const SizedBox.shrink();
 
         final data = snapshot.data!.data() as Map<String, dynamic>?;
 
         // Hide and remove if the film is deleted or returned
-        if (!snapshot.data!.exists || data == null || data['status'] == 'returned') {
+        if (!snapshot.data!.exists ||
+            data == null ||
+            data['status'] == 'returned') {
           Future.microtask(() {
             FirebaseFirestore.instance
                 .collection('users')
@@ -174,7 +185,8 @@ class _WatchlistCard extends StatelessWidget {
           child: GestureDetector(
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => FilmDetailScreen(film: currentFilm)),
+              MaterialPageRoute(
+                  builder: (_) => FilmDetailScreen(film: currentFilm)),
             ),
             child: Container(
               padding: const EdgeInsets.all(12),
@@ -185,59 +197,59 @@ class _WatchlistCard extends StatelessWidget {
               ),
               child: Row(
                 children: [
-            // Thumbnail
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: film.thumbnailUrl.isNotEmpty
-                  ? Image.network(
-                      film.thumbnailUrl,
-                      width: 80,
-                      height: 56,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _placeholder(),
-                    )
-                  : _placeholder(),
-            ),
-            const SizedBox(width: 12),
+                  // Thumbnail
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: film.thumbnailUrl.isNotEmpty
+                        ? Image.network(
+                            film.thumbnailUrl,
+                            width: 80,
+                            height: 56,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => _placeholder(),
+                          )
+                        : _placeholder(),
+                  ),
+                  const SizedBox(width: 12),
 
-            // Info
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    film.title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
+                  // Info
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          film.title,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(Icons.star_rounded,
+                                color: Colors.amber, size: 13),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${currentFilm.rating.toStringAsFixed(1)}  •  ${currentFilm.genre}  •  ${currentFilm.year}',
+                              style: const TextStyle(
+                                  color: Colors.white54, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      const Icon(Icons.star_rounded,
-                          color: Colors.amber, size: 13),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${film.rating}  •  ${film.genre}  •  ${film.year}',
-                        style: const TextStyle(
-                            color: Colors.white54, fontSize: 12),
-                      ),
-                    ],
-                  ),
+
+                  const Icon(Icons.chevron_right, color: Colors.white38),
                 ],
               ),
             ),
-
-            const Icon(Icons.chevron_right, color: Colors.white38),
-          ],
-        ),
-      ),
-    ),
-  );
+          ),
+        );
       },
     );
   }
@@ -246,7 +258,7 @@ class _WatchlistCard extends StatelessWidget {
         width: 80,
         height: 56,
         color: const Color(0xFF1A3528),
-        child: const Icon(Icons.movie_outlined,
-            color: Colors.white24, size: 28),
+        child:
+            const Icon(Icons.movie_outlined, color: Colors.white24, size: 28),
       );
 }

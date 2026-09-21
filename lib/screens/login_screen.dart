@@ -3,10 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'student_main_nav_screen.dart';
-import 'devcom_dashboard_screen.dart';
 import 'signup_screen.dart';
-import 'public_nav_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -21,7 +18,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _obscurePass = true;
   bool _isLoading = false;
-  
+
   List<Map<String, String>> _savedAccounts = [];
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -50,7 +47,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _saveAccountLocally(String email, String password) async {
     final prefs = await SharedPreferences.getInstance();
-    
+
     // Check if it already exists
     final existingIndex = _savedAccounts.indexWhere((acc) => acc['email'] == email);
     if (existingIndex != -1) {
@@ -58,7 +55,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } else {
       _savedAccounts.add({'email': email, 'password': password});
     }
-    
+
     await prefs.setString('saved_accounts', jsonEncode(_savedAccounts));
     if (mounted) {
       setState(() {});
@@ -80,7 +77,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   /// Roles are stored capitalized in Firestore (e.g. 'Viewer', 'CAS Student',
   /// 'Officer', 'Moderator', 'Reviewer') — see signup_screen.dart and
-  /// manage_users_screen.dart. Routing below must match those exact strings.
+  /// manage_users_screen.dart.
   ///
   /// Self-heal: some older/interrupted signups created a Firebase Auth
   /// account but never got a matching users/{uid} doc (e.g. the Firestore
@@ -90,6 +87,11 @@ class _LoginScreenState extends State<LoginScreen> {
   /// Viewer/Public with no way to fix it from the app. If we detect a
   /// missing doc here, create a default Viewer profile for them instead
   /// of leaving them permanently stuck.
+  ///
+  /// We still call this after login even though we no longer navigate
+  /// off its result (see _onLogin below) -- its job now is purely this
+  /// repair side-effect. _RoleGate (main.dart) does its own role lookup
+  /// and routing once it sees the auth state change.
   Future<String?> _getUserRole(User user) async {
     try {
       final docRef = _firestore.collection('users').doc(user.uid);
@@ -132,29 +134,17 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (!mounted) return;
 
-      final role = await _getUserRole(credential.user!);
-
-      if (!mounted) return;
-
-      if (role == 'Officer' || role == 'Moderator' || role == 'Reviewer') {
-        // Staff → dashboard
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const DevcomDashboardScreen()),
-        );
-      } else if (role == 'CAS Student') {
-        // Officer-promoted → can submit films
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const StudentMainNavScreen()),
-        );
-      } else {
-        // Viewer / everyone else → watch only
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const PublicNavScreen()),
-        );
-      }
+      // Run the self-heal check (repairs a missing users/{uid} doc if
+      // needed) but DON'T navigate off its result anymore.
+      //
+      // _RoleGate in main.dart is already listening to
+      // authStateChanges() and will automatically swap this LoginScreen
+      // for the correct role's screen on its own the moment
+      // signInWithEmailAndPassword above completes. Calling
+      // Navigator.pushReplacement here used to REPLACE _RoleGate's own
+      // route entirely -- which permanently killed its auth listener,
+      // so Log Out later would silently do nothing.
+      await _getUserRole(credential.user!);
     } on FirebaseAuthException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message ?? e.code)),
@@ -374,7 +364,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ],
               ),
-              
+
               if (_savedAccounts.isNotEmpty) ...[
                 const SizedBox(height: 48),
                 const Center(

@@ -66,7 +66,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         // The Auth account was created but the profile write failed
         // (network hiccup, permissions rule, app backgrounded, etc).
         // Without this, we'd end up with an orphaned Auth account that
-        // can log in but has no users/{uid} doc — it would show up in
+        // can log in but has no users/{uid} doc -- it would show up in
         // login_logs but never in the users collection, and would
         // silently be treated as a Viewer with no role forever.
         // Roll it back so the person can just try signing up again.
@@ -74,22 +74,28 @@ class _SignUpScreenState extends State<SignUpScreen> {
           await credential.user!.delete();
         } catch (_) {
           // If delete also fails (e.g. requires recent login), there's
-          // nothing more we can do client-side — surface the original
+          // nothing more we can do client-side -- surface the original
           // error below so at least the user knows signup didn't finish.
         }
         rethrow;
       }
 
-      // Stay signed in — AgreementScreen's "Agree" button routes
-      // straight to PublicNavScreen (every new signup starts as
-      // Viewer), so there's no need to sign out and force a manual
-      // re-login here.
+      // Stay signed in -- AgreementScreen's "Agree" button routes back
+      // to _RoleGate (in main.dart), which will already recognize this
+      // new Viewer and show PublicNavScreen -- so there's no need to
+      // sign out and force a manual re-login here.
       if (!mounted) return;
 
-      Navigator.pushAndRemoveUntil(
+      // Plain push (NOT pushAndRemoveUntil) -- _RoleGate is the very
+      // first route in the app (the `home` of MaterialApp), and it's
+      // the thing that listens for sign-out and automatically shows
+      // LoginScreen. Removing it from the stack (which pushAndRemoveUntil
+      // with `(route) => false` was doing) killed that listener for the
+      // rest of the session, which is why Log Out silently did nothing
+      // after creating a new account.
+      Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const AgreementScreen()),
-        (route) => false,
       );
     } on FirebaseAuthException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -130,8 +136,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: 36),
-
-                // ── Logo ──────────────────────────────────────────────────
                 Center(
                   child: ClipOval(
                     child: Image.asset(
@@ -142,10 +146,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 24),
-
-                // ── Title ─────────────────────────────────────────────────
                 const Text(
                   'Create Account',
                   textAlign: TextAlign.center,
@@ -182,9 +183,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     ],
                   ),
                 ),
-
                 const SizedBox(height: 10),
-
                 const Text(
                   'Sign up to start watching inspiring\nstories and student documentaries.',
                   textAlign: TextAlign.center,
@@ -194,20 +193,14 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     height: 1.5,
                   ),
                 ),
-
                 const SizedBox(height: 36),
-
-                // ── Full Name field ───────────────────────────────────────
                 _buildTextField(
                   controller: _displayNameCtrl,
                   hint: 'Full Name',
                   prefixIcon: Icons.person_outline,
                   autofillHints: const [AutofillHints.name],
                 ),
-
                 const SizedBox(height: 14),
-
-                // ── Email field ───────────────────────────────────────────
                 _buildTextField(
                   controller: _emailCtrl,
                   hint: 'Email',
@@ -215,10 +208,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   keyboardType: TextInputType.emailAddress,
                   autofillHints: const [AutofillHints.email],
                 ),
-
                 const SizedBox(height: 14),
-
-                // ── Password field ────────────────────────────────────────
                 _buildTextField(
                   controller: _passwordCtrl,
                   hint: 'Password',
@@ -237,10 +227,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                         setState(() => _obscurePass = !_obscurePass),
                   ),
                 ),
-
                 const SizedBox(height: 14),
-
-                // ── Confirm password field ────────────────────────────────
                 _buildTextField(
                   controller: _confirmPasswordCtrl,
                   hint: 'Confirm Password',
@@ -259,10 +246,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                         setState(() => _obscureConfirm = !_obscureConfirm),
                   ),
                 ),
-
                 const SizedBox(height: 28),
-
-                // ── Create Account button ─────────────────────────────────
                 ElevatedButton(
                   onPressed: _isLoading ? null : _signUp,
                   style: ElevatedButton.styleFrom(
@@ -292,10 +276,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           ),
                         ),
                 ),
-
                 const SizedBox(height: 24),
-
-                // ── Log in link ───────────────────────────────────────────
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
