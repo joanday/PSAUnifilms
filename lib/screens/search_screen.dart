@@ -6,7 +6,6 @@ import '../models/film.dart';
 import '../services/cbvr_service.dart';
 import '../widgets/cbvr_result_card.dart';
 import 'film_detail_screen.dart';
-import 'cbvr_search_screen.dart';
 
 class SearchScreen extends StatefulWidget {
   final String initialGenre;

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../models/film.dart';
 import '../services/cbvr_service.dart';
 import '../widgets/cbvr_result_card.dart';

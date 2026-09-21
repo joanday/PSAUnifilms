@@ -6,17 +6,20 @@ import 'package:flutter/material.dart';
 /// user, a row of tappable stars to submit or update their own 1-5 rating.
 /// Ratings are stored per-user under films/{filmId}/ratings/{userId} and
 /// averaged into the film document's `rating` / `ratingCount` fields via a
-/// Firestore transaction, so the average always reflects every rater.
+/// Firestore transaction.
+///
+/// The average/count shown here is streamed LIVE from films/{filmId} rather
+/// than taken from a value passed in by the parent -- a parent screen may
+/// be holding a stale/snapshotted Film object (e.g. one built from a
+/// watchlist entry, which never stores ratingCount), which previously made
+/// this widget freeze at whatever count it was first built with and show
+/// "No ratings yet" even when the film had real ratings.
 class StarRating extends StatefulWidget {
   final String filmId;
-  final double averageRating;
-  final int ratingCount;
 
   const StarRating({
     super.key,
     required this.filmId,
-    required this.averageRating,
-    required this.ratingCount,
   });
 
   @override
@@ -30,8 +33,6 @@ class _StarRatingState extends State<StarRating> {
   int? _myRating;
   bool _loadingMyRating = true;
   bool _submitting = false;
-  late double _localAverage;
-  late int _localCount;
 
   DocumentReference<Map<String, dynamic>> get _filmRef =>
       FirebaseFirestore.instance.collection('films').doc(widget.filmId);
@@ -45,8 +46,6 @@ class _StarRatingState extends State<StarRating> {
   @override
   void initState() {
     super.initState();
-    _localAverage = widget.averageRating;
-    _localCount = widget.ratingCount;
     _loadMyRating();
   }
 
@@ -83,9 +82,6 @@ class _StarRatingState extends State<StarRating> {
     setState(() => _submitting = true);
 
     try {
-      double resultAverage = _localAverage;
-      int resultCount = _localCount;
-
       await FirebaseFirestore.instance.runTransaction((transaction) async {
         // Reads must happen before any writes in a Firestore transaction.
         final filmSnap = await transaction.get(_filmRef);
@@ -110,17 +106,12 @@ class _StarRatingState extends State<StarRating> {
           'ratingCount': newCount,
           'rating': newAverage,
         });
-
-        resultAverage = newAverage;
-        resultCount = newCount;
       });
 
+      // No need to update local average/count state here -- the
+      // StreamBuilder in build() below picks up the new values live.
       if (mounted) {
-        setState(() {
-          _myRating = stars;
-          _localAverage = resultAverage;
-          _localCount = resultCount;
-        });
+        setState(() => _myRating = stars);
       }
     } catch (e) {
       debugPrint('Failed to submit rating: $e');
@@ -139,20 +130,14 @@ class _StarRatingState extends State<StarRating> {
     required int filledCount,
     required double size,
     void Function(int)? onTap,
-    bool half = false,
   }) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: List.generate(5, (i) {
         final starIndex = i + 1;
-        IconData icon;
-        if (half && starIndex == filledCount + 1 && filledCount % 1 != 0) {
-          icon = Icons.star_half_rounded;
-        } else {
-          icon = starIndex <= filledCount
-              ? Icons.star_rounded
-              : Icons.star_border_rounded;
-        }
+        final icon = starIndex <= filledCount
+            ? Icons.star_rounded
+            : Icons.star_border_rounded;
         final star = Icon(icon, color: _amber, size: size);
         if (onTap == null) return star;
         return InkWell(
@@ -169,47 +154,58 @@ class _StarRatingState extends State<StarRating> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: _filmRef.snapshots(),
+      builder: (context, snapshot) {
+        final data = snapshot.data?.data();
+        final average = (data?['rating'] as num?)?.toDouble() ?? 0.0;
+        final count = (data?['ratingCount'] as num?)?.toInt() ?? 0;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _starRow(filledCount: _localAverage.round(), size: 18),
-            const SizedBox(width: 8),
-            Text(
-              _localCount > 0
-                  ? '${_localAverage.toStringAsFixed(1)} ($_localCount rating${_localCount == 1 ? '' : 's'})'
-                  : 'No ratings yet',
-              style: const TextStyle(color: _textMuted, fontSize: 13),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        if (_loadingMyRating)
-          const SizedBox(
-            height: 24,
-            width: 24,
-            child: CircularProgressIndicator(strokeWidth: 2, color: _amber),
-          )
-        else
-          Row(
-            children: [
-              Text(
-                _myRating != null ? 'Your rating:' : 'Rate this documentary:',
-                style: const TextStyle(color: Colors.white70, fontSize: 13),
-              ),
-              const SizedBox(width: 8),
-              Opacity(
-                opacity: _submitting ? 0.5 : 1,
-                child: _starRow(
-                  filledCount: _myRating ?? 0,
-                  size: 26,
-                  onTap: _submitting ? null : _submitRating,
+            Row(
+              children: [
+                _starRow(filledCount: average.round(), size: 18),
+                const SizedBox(width: 8),
+                Text(
+                  count > 0
+                      ? '${average.toStringAsFixed(1)} ($count rating${count == 1 ? '' : 's'})'
+                      : 'No ratings yet',
+                  style: const TextStyle(color: _textMuted, fontSize: 13),
                 ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            if (_loadingMyRating)
+              const SizedBox(
+                height: 24,
+                width: 24,
+                child: CircularProgressIndicator(strokeWidth: 2, color: _amber),
+              )
+            else
+              Row(
+                children: [
+                  Text(
+                    _myRating != null
+                        ? 'Your rating:'
+                        : 'Rate this documentary:',
+                    style: const TextStyle(color: Colors.white70, fontSize: 13),
+                  ),
+                  const SizedBox(width: 8),
+                  Opacity(
+                    opacity: _submitting ? 0.5 : 1,
+                    child: _starRow(
+                      filledCount: _myRating ?? 0,
+                      size: 26,
+                      onTap: _submitting ? null : _submitRating,
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
-      ],
+          ],
+        );
+      },
     );
   }
 }

@@ -104,7 +104,7 @@ class ThemeFilmsScreen extends StatelessWidget {
           color: const Color(0xFF1A2E22),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.3),
+              color: Colors.black.withValues(alpha: 0.3),
               blurRadius: 8,
               offset: const Offset(0, 4),
             )
@@ -129,7 +129,7 @@ class ThemeFilmsScreen extends StatelessWidget {
                   end: Alignment.bottomCenter,
                   colors: [
                     Colors.transparent,
-                    const Color(0xFF0F1713).withOpacity(0.9),
+                    const Color(0xFF0F1713).withValues(alpha: 0.9),
                   ],
                 ),
               ),

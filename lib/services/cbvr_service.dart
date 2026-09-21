@@ -1,8 +1,5 @@
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:cloud_functions/cloud_functions.dart';
-import '../env.dart';
 import '../models/film.dart';
 
 /// A single CBVR result returned by Gemini.

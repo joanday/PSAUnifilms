@@ -7,7 +7,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import '../models/film.dart';
 import '../theme/app_theme.dart';
 import '../widgets/user_avatar.dart';
 import 'account_settings_screen.dart';

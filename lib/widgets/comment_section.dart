@@ -212,7 +212,7 @@ class _CommentSectionState extends State<CommentSection> {
                   children: [
                     CircleAvatar(
                       radius: 16,
-                      backgroundColor: _greenPrime.withOpacity(0.2),
+                      backgroundColor: _greenPrime.withValues(alpha: 0.2),
                       child: Text(
                         comment.userName.isNotEmpty
                             ? comment.userName[0].toUpperCase()
