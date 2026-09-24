@@ -25,6 +25,23 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  // ✅ NEW: the standard password requirements for every new account --
+  // shown live below the Password field (see _requirementRow) and also
+  // enforced here before an account is actually created.
+  bool _hasMinLength(String p) => p.length >= 8;
+  bool _hasNumber(String p) => RegExp(r'[0-9]').hasMatch(p);
+  bool _hasSpecialChar(String p) =>
+      RegExp(r'''[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]''').hasMatch(p);
+  bool _isPasswordValid(String p) =>
+      _hasMinLength(p) && _hasNumber(p) && _hasSpecialChar(p);
+
+  @override
+  void initState() {
+    super.initState();
+    // Rebuilds the live requirements checklist on every keystroke.
+    _passwordCtrl.addListener(() => setState(() {}));
+  }
+
   Future<void> _signUp() async {
     if (_displayNameCtrl.text.trim().isEmpty ||
         _emailCtrl.text.trim().isEmpty ||
@@ -32,6 +49,14 @@ class _SignUpScreenState extends State<SignUpScreen> {
         _confirmPasswordCtrl.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please fill in all fields')),
+      );
+      return;
+    }
+
+    if (!_isPasswordValid(_passwordCtrl.text)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Password does not meet the requirements below.')),
       );
       return;
     }
@@ -121,190 +146,249 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // ✅ CHANGED: same fix as login_screen.dart -- the form used to
+    // stretch edge-to-edge on a wide/desktop browser window (looked huge
+    // and ugly, per feedback). Nothing about the fields/buttons/text
+    // changed -- same labels, same icons -- this just caps the form's
+    // width at 420px and centers it on a wide/desktop screen. An actual
+    // phone (width <= 600) is unaffected.
+    final isWide = MediaQuery.of(context).size.width > 600;
     return Scaffold(
-      backgroundColor: const Color(0xFF0D1B13),
+      backgroundColor: const Color(0xFF0F1A0F),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
-          // AutofillGroup ties all the fields below together as one
-          // logical form for Android's autofill service. Without this,
-          // Android's autofill/Smart Lock overlay can pop up and steal
-          // focus the moment you start typing in ANY field, which is
-          // what was closing the keyboard and forcing a second tap.
-          child: AutofillGroup(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 36),
-                Center(
-                  child: ClipOval(
-                    child: Image.asset(
-                      'assets/images/psaulogo.png',
-                      width: 110,
-                      height: 110,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                const Text(
-                  'Create Account',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w400,
-                    letterSpacing: 0.4,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                RichText(
-                  textAlign: TextAlign.center,
-                  text: const TextSpan(
-                    children: [
-                      TextSpan(
-                        text: 'PSAUni',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 26,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                      TextSpan(
-                        text: 'Films',
-                        style: TextStyle(
-                          color: Color(0xFF4CAF50),
-                          fontSize: 26,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
-                const Text(
-                  'Sign up to start watching inspiring\nstories and student documentaries.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white38,
-                    fontSize: 13,
-                    height: 1.5,
-                  ),
-                ),
-                const SizedBox(height: 36),
-                _buildTextField(
-                  controller: _displayNameCtrl,
-                  hint: 'Full Name',
-                  prefixIcon: Icons.person_outline,
-                  autofillHints: const [AutofillHints.name],
-                ),
-                const SizedBox(height: 14),
-                _buildTextField(
-                  controller: _emailCtrl,
-                  hint: 'Email',
-                  prefixIcon: Icons.email_outlined,
-                  keyboardType: TextInputType.emailAddress,
-                  autofillHints: const [AutofillHints.email],
-                ),
-                const SizedBox(height: 14),
-                _buildTextField(
-                  controller: _passwordCtrl,
-                  hint: 'Password',
-                  prefixIcon: Icons.lock_outline,
-                  obscureText: _obscurePass,
-                  autofillHints: const [AutofillHints.newPassword],
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscurePass
-                          ? Icons.visibility_outlined
-                          : Icons.visibility_off_outlined,
-                      color: Colors.white38,
-                      size: 20,
-                    ),
-                    onPressed: () =>
-                        setState(() => _obscurePass = !_obscurePass),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                _buildTextField(
-                  controller: _confirmPasswordCtrl,
-                  hint: 'Confirm Password',
-                  prefixIcon: Icons.lock_outline,
-                  obscureText: _obscureConfirm,
-                  autofillHints: const [AutofillHints.newPassword],
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscureConfirm
-                          ? Icons.visibility_outlined
-                          : Icons.visibility_off_outlined,
-                      color: Colors.white38,
-                      size: 20,
-                    ),
-                    onPressed: () =>
-                        setState(() => _obscureConfirm = !_obscureConfirm),
-                  ),
-                ),
-                const SizedBox(height: 28),
-                ElevatedButton(
-                  onPressed: _isLoading ? null : _signUp,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF3D8B40),
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size(double.infinity, 52),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2.5,
-                          ),
-                        )
-                      : const Text(
-                          'Create Account',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+          child: Center(
+            child: ConstrainedBox(
+              constraints:
+                  BoxConstraints(maxWidth: isWide ? 420 : double.infinity),
+              // AutofillGroup ties all the fields below together as one
+              // logical form for Android's autofill service. Without this,
+              // Android's autofill/Smart Lock overlay can pop up and steal
+              // focus the moment you start typing in ANY field, which is
+              // what was closing the keyboard and forcing a second tap.
+              child: AutofillGroup(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Text(
-                      'Already have an account? ',
-                      style: TextStyle(color: Colors.white38, fontSize: 13),
-                    ),
-                    GestureDetector(
-                      onTap: () => Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(builder: (_) => const LoginScreen()),
-                      ),
-                      child: const Text(
-                        'Log in',
-                        style: TextStyle(
-                          color: Color(0xFF4CAF50),
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
+                    const SizedBox(height: 36),
+                    Center(
+                      child: ClipOval(
+                        child: Image.asset(
+                          'assets/images/psaulogo.png',
+                          width: 110,
+                          height: 110,
+                          fit: BoxFit.cover,
                         ),
                       ),
+                    ),
+                    const SizedBox(height: 24),
+                    const Text(
+                      'Create Account',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w400,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    RichText(
+                      textAlign: TextAlign.center,
+                      text: const TextSpan(
+                        children: [
+                          TextSpan(
+                            text: 'PSAUni',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 26,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          TextSpan(
+                            text: 'Films',
+                            style: TextStyle(
+                              color: Color(0xFF4CAF50),
+                              fontSize: 26,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Sign up to start watching inspiring\nstories and student documentaries.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white38,
+                        fontSize: 13,
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 36),
+                    _buildTextField(
+                      controller: _displayNameCtrl,
+                      hint: 'Full Name',
+                      prefixIcon: Icons.person_outline,
+                      autofillHints: const [AutofillHints.name],
+                    ),
+                    const SizedBox(height: 14),
+                    _buildTextField(
+                      controller: _emailCtrl,
+                      hint: 'Email',
+                      prefixIcon: Icons.email_outlined,
+                      keyboardType: TextInputType.emailAddress,
+                      autofillHints: const [AutofillHints.email],
+                    ),
+                    const SizedBox(height: 14),
+                    _buildTextField(
+                      controller: _passwordCtrl,
+                      hint: 'Password',
+                      prefixIcon: Icons.lock_outline,
+                      obscureText: _obscurePass,
+                      autofillHints: const [AutofillHints.newPassword],
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscurePass
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                          color: Colors.white38,
+                          size: 20,
+                        ),
+                        onPressed: () =>
+                            setState(() => _obscurePass = !_obscurePass),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    // ✅ NEW: live password requirements checklist -- each item
+                    // lights up green with a check the moment that requirement
+                    // is met while the person is typing, so they know exactly
+                    // what "standard" password format is expected before they
+                    // even try to submit the form.
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: Wrap(
+                        spacing: 14,
+                        runSpacing: 4,
+                        children: [
+                          _requirementRow(_hasMinLength(_passwordCtrl.text),
+                              'At least 8 characters'),
+                          _requirementRow(_hasNumber(_passwordCtrl.text),
+                              'Contains a number'),
+                          _requirementRow(_hasSpecialChar(_passwordCtrl.text),
+                              'Contains a special character (!@#\$...)'),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    _buildTextField(
+                      controller: _confirmPasswordCtrl,
+                      hint: 'Confirm Password',
+                      prefixIcon: Icons.lock_outline,
+                      obscureText: _obscureConfirm,
+                      autofillHints: const [AutofillHints.newPassword],
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscureConfirm
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                          color: Colors.white38,
+                          size: 20,
+                        ),
+                        onPressed: () =>
+                            setState(() => _obscureConfirm = !_obscureConfirm),
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    ElevatedButton(
+                      onPressed: _isLoading ? null : _signUp,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF3D8B40),
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(double.infinity, 52),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2.5,
+                              ),
+                            )
+                          : const Text(
+                              'Create Account',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                    ),
+                    const SizedBox(height: 24),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text(
+                          'Already have an account? ',
+                          style: TextStyle(color: Colors.white38, fontSize: 13),
+                        ),
+                        GestureDetector(
+                          onTap: () => Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const LoginScreen()),
+                          ),
+                          child: const Text(
+                            'Log in',
+                            style: TextStyle(
+                              color: Color(0xFF4CAF50),
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
           ),
         ),
       ),
+    );
+  }
+
+  // ✅ NEW: one row of the live password requirements checklist -- a
+  // filled green check when the requirement is met, an empty gray circle
+  // when it isn't yet.
+  Widget _requirementRow(bool met, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          met ? Icons.check_circle : Icons.radio_button_unchecked,
+          size: 14,
+          color: met ? const Color(0xFF4CAF50) : Colors.white24,
+        ),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            color: met ? const Color(0xFF4CAF50) : Colors.white38,
+          ),
+        ),
+      ],
     );
   }
 

@@ -12,6 +12,8 @@ import '../widgets/user_avatar.dart';
 import 'account_settings_screen.dart';
 import 'change_password_screen.dart';
 import 'my_submissions_screen.dart';
+import 'watchlist_screen.dart';
+import 'edit_documentaries_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -34,7 +36,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _loadUserRole() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
       if (mounted) {
         setState(() {
           _userRole = doc.data()?['role'] as String?;
@@ -66,7 +71,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } else {
       await FirebaseMessaging.instance.unsubscribeFromTopic('new_uploads');
       if (user != null) {
-        await FirebaseMessaging.instance.unsubscribeFromTopic('user_${user.uid}');
+        await FirebaseMessaging.instance
+            .unsubscribeFromTopic('user_${user.uid}');
       }
     }
   }
@@ -101,8 +107,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.photo_library, color: AppTheme.greenPrime),
-              title: const Text('Upload New Picture', style: TextStyle(color: AppTheme.textPrimary)),
+              leading:
+                  const Icon(Icons.photo_library, color: AppTheme.greenPrime),
+              title: const Text('Upload New Picture',
+                  style: TextStyle(color: AppTheme.textPrimary)),
               onTap: () {
                 Navigator.pop(context);
                 _pickAndUploadImage();
@@ -110,8 +118,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             if (FirebaseAuth.instance.currentUser?.photoURL != null)
               ListTile(
-                leading: const Icon(Icons.delete_outline, color: AppTheme.redDecline),
-                title: const Text('Remove Picture', style: TextStyle(color: AppTheme.redDecline)),
+                leading: const Icon(Icons.delete_outline,
+                    color: AppTheme.redDecline),
+                title: const Text('Remove Picture',
+                    style: TextStyle(color: AppTheme.redDecline)),
                 onTap: () {
                   Navigator.pop(context);
                   _removeAvatar();
@@ -124,6 +134,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _pickAndUploadImage() async {
+    // Declared outside the try block so the catch block below can still
+    // see it (a variable declared inside try isn't visible in its catch).
+    BuildContext? rootDialogContext;
     try {
       final picker = ImagePicker();
       final XFile? image = await picker.pickImage(
@@ -161,33 +174,55 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (user == null) return;
 
       // Show loading indicator
+      // ✅ CHANGED: showDialog() defaults to putting the dialog on the
+      // app's ROOT navigator (not whichever nested tab navigator this
+      // screen happens to live inside), so the old `Navigator.pop(context)`
+      // below -- which used THIS screen's own context -- was closing the
+      // wrong navigator's route and silently doing nothing, leaving this
+      // loading spinner stuck on screen forever. Now we keep a handle to
+      // the dialog's OWN context (rootDialogContext) and pop THAT one
+      // instead, so it always closes the right thing regardless of what
+      // navigator this screen is nested inside.
       if (mounted) {
         showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (_) => const Center(child: CircularProgressIndicator(color: AppTheme.greenPrime)),
+          builder: (dialogContext) {
+            rootDialogContext = dialogContext;
+            return const Center(
+                child: CircularProgressIndicator(color: AppTheme.greenPrime));
+          },
         );
       }
 
-      final storageRef = FirebaseStorage.instance.ref().child('users/${user.uid}/avatar.jpg');
+      final storageRef =
+          FirebaseStorage.instance.ref().child('users/${user.uid}/avatar.jpg');
       await storageRef.putFile(File(croppedFile.path));
       final downloadUrl = await storageRef.getDownloadURL();
 
       await user.updatePhotoURL(downloadUrl);
-      
+
+      if (rootDialogContext != null) {
+        Navigator.pop(rootDialogContext!); // Close loading dialog
+      }
       if (mounted) {
-        Navigator.pop(context); // Close loading dialog
         setState(() {}); // Refresh UI
       }
     } catch (e) {
+      if (rootDialogContext != null) {
+        Navigator.pop(rootDialogContext!);
+      }
       if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to upload image: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to upload image: $e')));
       }
     }
   }
 
   Future<void> _removeAvatar() async {
+    // Same fix as _pickAndUploadImage above -- declared outside try so
+    // catch can still see it.
+    BuildContext? rootDialogContext;
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
@@ -197,27 +232,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
         showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (_) => const Center(child: CircularProgressIndicator(color: AppTheme.greenPrime)),
+          builder: (dialogContext) {
+            rootDialogContext = dialogContext;
+            return const Center(
+                child: CircularProgressIndicator(color: AppTheme.greenPrime));
+          },
         );
       }
 
       try {
-        final storageRef = FirebaseStorage.instance.ref().child('users/${user.uid}/avatar.jpg');
+        final storageRef = FirebaseStorage.instance
+            .ref()
+            .child('users/${user.uid}/avatar.jpg');
         await storageRef.delete();
       } catch (e) {
         // Ignore if file doesn't exist
       }
 
       await user.updatePhotoURL(null);
-      
+
+      if (rootDialogContext != null) {
+        Navigator.pop(rootDialogContext!); // Close loading dialog
+      }
       if (mounted) {
-        Navigator.pop(context); // Close loading dialog
         setState(() {}); // Refresh UI
       }
     } catch (e) {
+      if (rootDialogContext != null) {
+        Navigator.pop(rootDialogContext!);
+      }
       if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to remove image: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to remove image: $e')));
       }
     }
   }
@@ -284,7 +330,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     color: AppTheme.greenPrime.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.info_outline, color: AppTheme.greenPrime),
+                  child: const Icon(Icons.info_outline,
+                      color: AppTheme.greenPrime),
                 ),
                 const SizedBox(width: 12),
                 const Text('About PSAUniFilms',
@@ -304,7 +351,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 8),
             const Text(
                 'PSAUniFilms was developed as a Capstone Project for the DevCom/CAS department of Pampanga State Agricultural University. It serves as a modern, centralized digital archive designed to preserve, showcase, and semantically search student-produced documentaries.',
-                style: TextStyle(color: AppTheme.textMuted, fontSize: 13, height: 1.5)),
+                style: TextStyle(
+                    color: AppTheme.textMuted, fontSize: 13, height: 1.5)),
             const SizedBox(height: 24),
             const Text('The Developers',
                 style: TextStyle(
@@ -387,10 +435,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  // ✅ FIXED: this was the cause of the "Log Out?" popup staying stuck on
+  // screen, floating over the Login page after logging out. showDialog()
+  // puts the popup on the app's ROOT navigator by default, but the
+  // buttons below were calling `Navigator.pop(context)` using THIS
+  // screen's own context -- which belongs to the nested tab navigator
+  // Profile lives inside, not the root one. That pop was closing the
+  // wrong navigator (silently doing nothing), so the popup was never
+  // actually dismissed -- it just LOOKED closed for a moment because the
+  // screen underneath it changed to the Login page the instant sign-out
+  // completed. Now both buttons use the dialog's own context
+  // (dialogContext) instead, so they always close the actual popup.
   void _showLogoutDialog() {
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: AppTheme.bgCard,
         title: const Text('Log Out?',
             style: TextStyle(color: AppTheme.textPrimary)),
@@ -398,16 +457,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
             style: TextStyle(color: AppTheme.textMuted)),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(dialogContext),
               child: const Text('Cancel',
                   style: TextStyle(color: AppTheme.textMuted))),
           TextButton(
               onPressed: () async {
-                Navigator.pop(context); // close dialog first
+                Navigator.pop(dialogContext); // close dialog first
                 await FirebaseAuth.instance.signOut();
-                // _RoleGate in main.dart listens to authStateChanges()
-                // and will automatically show LoginScreen — no need
-                // for manual navigation which was causing the delay.
+                // _RoleGate in main.dart listens to userChanges() and
+                // will automatically show LoginScreen — no need for
+                // manual navigation which was causing the delay.
               },
               child: const Text('Log Out',
                   style: TextStyle(color: AppTheme.redDecline))),
@@ -425,141 +484,197 @@ class _ProfileScreenState extends State<ProfileScreen> {
         : _nameFromEmail(email);
     final initials = _initials(displayName);
 
+    // ✅ CHANGED: per the reference mockup, the settings list is just
+    // centered on the plain page background now -- no bordered/tinted
+    // "card" box around it. On an actual phone (width <= 600) this has no
+    // effect: same plain full-width list as before.
+    final isWide = MediaQuery.of(context).size.width > 600;
+
     return Scaffold(
-      backgroundColor: const Color(0xFF0D1F17),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF0D1F17),
-        title: const Text('Profile & Settings',
-            style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Colors.white)),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // ── Avatar ──────────────────────────────────────────────────────
-          Center(
-            child: Column(children: [
-              const SizedBox(height: 12),
-              GestureDetector(
-                onTap: _showAvatarOptions,
-                child: Stack(
-                  children: [
-                    const UserAvatar(radius: 48, showInitialsFallback: true),
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                            color: AppTheme.greenPrime,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                                color: const Color(0xFF0D1F17), width: 2)),
-                        child: const Icon(Icons.camera_alt_outlined,
-                            size: 14, color: Colors.white),
+      // ✅ CHANGED: was 0xFF0D1F17 -- now 0xFF0F1A0F, matching
+      // manage_users_screen.dart's page background exactly (Watch/Users/
+      // Upload/Profile all share one uniform background color now).
+      backgroundColor: const Color(0xFF0F1A0F),
+      // ✅ CHANGED: dropped the AppBar title -- see submit_screen.dart for
+      // the same reasoning. "Profile & Settings" is now a heading inside
+      // the centered column instead, matching the "User Management"
+      // heading's style/position exactly.
+      body: SingleChildScrollView(
+        child: Center(
+          child: ConstrainedBox(
+            constraints:
+                BoxConstraints(maxWidth: isWide ? 640 : double.infinity),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(
+                    width: double.infinity,
+                    child: Text('Profile & Settings',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700)),
+                  ),
+                  const SizedBox(height: 16),
+                  // ── Avatar ──────────────────────────────────────────────────────
+                  Center(
+                    child: Column(children: [
+                      const SizedBox(height: 12),
+                      GestureDetector(
+                        onTap: _showAvatarOptions,
+                        child: Stack(
+                          children: [
+                            const UserAvatar(
+                                radius: 48, showInitialsFallback: true),
+                            Positioned(
+                              bottom: 0,
+                              right: 0,
+                              child: Container(
+                                width: 28,
+                                height: 28,
+                                decoration: BoxDecoration(
+                                    color: AppTheme.greenPrime,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                        color: const Color(0xFF0D1F17),
+                                        width: 2)),
+                                child: const Icon(Icons.camera_alt_outlined,
+                                    size: 14, color: Colors.white),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
+                      const SizedBox(height: 12),
+                      Text(displayName,
+                          style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.textPrimary)),
+                      const SizedBox(height: 4),
+                      Text(email,
+                          style: const TextStyle(
+                              color: AppTheme.textMuted, fontSize: 13)),
+                      const SizedBox(height: 16),
+                    ]),
+                  ),
+                  // ── Account ──────────────────────────────────────────────────────
+                  _sectionLabel('Account'),
+                  _settingsCard([
+                    // ✅ Admin-only: lets Admin open, edit and archive/unarchive any
+                    // uploaded documentary (title, description, AI tags via Retry
+                    // AI) without needing a separate old-style moderation screen.
+                    if (_userRole == 'Admin')
+                      _tile(Icons.movie_creation_outlined,
+                          'Edit Documentary Videos', onTap: () {
+                        Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) =>
+                                    const EditDocumentariesScreen()));
+                      }),
+                    // ✅ Admin-only too: regular Viewers already have their own
+                    // dedicated Watchlist tab in the bottom nav, so this would just
+                    // be a redundant duplicate for them. Admin has no Watchlist tab
+                    // (it was moved out to keep that nav focused), so it stays here
+                    // for Admin only.
+                    if (_userRole == 'Admin')
+                      _tile(Icons.bookmark_outline, 'My Watchlist', onTap: () {
+                        Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const WatchlistScreen()));
+                      }),
+                    _tile(Icons.person_outline, 'Account Settings', onTap: () {
+                      Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const AccountSettingsScreen()));
+                    }),
+                    _tile(Icons.lock_outline, 'Change Password', onTap: () {
+                      Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const ChangePasswordScreen()));
+                    }),
+                    if (_userRole == 'CAS Student' ||
+                        _userRole == 'cas_student')
+                      _tile(Icons.video_library_outlined, 'My Submissions',
+                          onTap: () {
+                        Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const MySubmissionsScreen()));
+                      }),
+                  ]),
+
+                  const SizedBox(height: 16),
+
+                  // ── Preferences ──────────────────────────────────────────────────
+                  // Note: "Download Quality" and "Subtitles" were moved to
+                  // watch_screen.dart (accessible via the settings icon in the
+                  // player's app bar) so they're reachable while actually
+                  // streaming, instead of being buried here.
+                  _sectionLabel('Preferences'),
+                  _settingsCard([
+                    _tile(
+                      Icons.notifications_outlined,
+                      'Notifications',
+                      trailing: Switch(
+                        value: _notificationsEnabled,
+                        onChanged: _toggleNotifications,
+                        activeThumbColor: AppTheme.greenPrime,
+                      ),
+                      onTap: () => _toggleNotifications(!_notificationsEnabled),
                     ),
-                  ],
-                ),
+                  ]),
+
+                  const SizedBox(height: 16),
+
+                  // ── Support ──────────────────────────────────────────────────────
+                  _sectionLabel('Support'),
+                  _settingsCard([
+                    _tile(Icons.help_outline, 'Help & Support',
+                        onTap: _showHelpSupport),
+                    _tile(Icons.privacy_tip_outlined, 'Privacy Policy',
+                        onTap: _showPrivacyPolicy),
+                    _tile(Icons.info_outline, 'About PSAUniFilms',
+                        subtitle: 'v1.0.0', onTap: _showAbout),
+                  ]),
+
+                  const SizedBox(height: 16),
+
+                  // ── Log Out ──────────────────────────────────────────────────────
+                  _settingsCard([
+                    ListTile(
+                      leading:
+                          const Icon(Icons.logout, color: AppTheme.redDecline),
+                      title: const Text('Log Out',
+                          style: TextStyle(
+                              color: AppTheme.redDecline,
+                              fontWeight: FontWeight.w500)),
+                      onTap: _showLogoutDialog,
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 2),
+                    ),
+                  ]),
+
+                  const SizedBox(height: 32),
+                  const Center(
+                    child: Text(
+                      '© 2026 PSAUniFilms. All rights reserved.',
+                      style: TextStyle(color: Colors.white24, fontSize: 11),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
               ),
-              const SizedBox(height: 12),
-              Text(displayName,
-                  style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.textPrimary)),
-              const SizedBox(height: 4),
-              Text(email,
-                  style:
-                      const TextStyle(color: AppTheme.textMuted, fontSize: 13)),
-              const SizedBox(height: 16),
-            ]),
-          ),
-          // ── Account ──────────────────────────────────────────────────────
-          _sectionLabel('Account'),
-          _settingsCard([
-            _tile(Icons.person_outline, 'Account Settings', onTap: () {
-              Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => const AccountSettingsScreen()));
-            }),
-            _tile(Icons.lock_outline, 'Change Password', onTap: () {
-              Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => const ChangePasswordScreen()));
-            }),
-            if (_userRole == 'CAS Student' || _userRole == 'cas_student')
-              _tile(Icons.video_library_outlined, 'My Submissions', onTap: () {
-                Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const MySubmissionsScreen()));
-              }),
-          ]),
-
-          const SizedBox(height: 16),
-
-          // ── Preferences ──────────────────────────────────────────────────
-          // Note: "Download Quality" and "Subtitles" were moved to
-          // watch_screen.dart (accessible via the settings icon in the
-          // player's app bar) so they're reachable while actually
-          // streaming, instead of being buried here.
-          _sectionLabel('Preferences'),
-          _settingsCard([
-            _tile(
-              Icons.notifications_outlined,
-              'Notifications',
-              trailing: Switch(
-                value: _notificationsEnabled,
-                onChanged: _toggleNotifications,
-                activeThumbColor: AppTheme.greenPrime,
-              ),
-              onTap: () => _toggleNotifications(!_notificationsEnabled),
-            ),
-          ]),
-
-          const SizedBox(height: 16),
-
-          // ── Support ──────────────────────────────────────────────────────
-          _sectionLabel('Support'),
-          _settingsCard([
-            _tile(Icons.help_outline, 'Help & Support',
-                onTap: _showHelpSupport),
-            _tile(Icons.privacy_tip_outlined, 'Privacy Policy',
-                onTap: _showPrivacyPolicy),
-            _tile(Icons.info_outline, 'About PSAUniFilms',
-                subtitle: 'v1.0.0', onTap: _showAbout),
-          ]),
-
-          const SizedBox(height: 16),
-
-          // ── Log Out ──────────────────────────────────────────────────────
-          _settingsCard([
-            ListTile(
-              leading: const Icon(Icons.logout, color: AppTheme.redDecline),
-              title: const Text('Log Out',
-                  style: TextStyle(
-                      color: AppTheme.redDecline, fontWeight: FontWeight.w500)),
-              onTap: _showLogoutDialog,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-            ),
-          ]),
-
-          const SizedBox(height: 32),
-          const Center(
-            child: Text(
-              '© 2026 PSAUniFilms. All rights reserved.',
-              style: TextStyle(color: Colors.white24, fontSize: 11),
             ),
           ),
-          const SizedBox(height: 16),
-        ],
+        ),
       ),
     );
   }
@@ -615,4 +730,3 @@ class _ProfileScreenState extends State<ProfileScreen> {
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
       );
 }
-

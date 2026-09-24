@@ -35,63 +35,73 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
+    // ✅ NEW: on a wide (desktop/Chrome) window this used to stretch
+    // edge-to-edge. Now it's capped and centered, like the rest of the
+    // app's forms. On an actual phone (width <= 600) this has zero effect.
+    final isWide = MediaQuery.of(context).size.width > 600;
     return Scaffold(
-      backgroundColor: AppTheme.bgDark,
+      backgroundColor: const Color(0xFF0F1A0F),
       appBar: AppBar(
-        backgroundColor: AppTheme.bgDark,
+        backgroundColor: const Color(0xFF0F1A0F),
         foregroundColor: Colors.white,
         title: const Text('Change Password'),
         elevation: 0,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const SizedBox(height: 20),
-            const Icon(Icons.lock_reset, color: Color(0xFF4CAF50), size: 72),
-            const SizedBox(height: 24),
-            const Text('Reset your password',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w600)),
-            const SizedBox(height: 12),
-            Text('A reset link will be sent to:\n${user?.email ?? ''}',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    color: Colors.white54, fontSize: 14, height: 1.6)),
-            const SizedBox(height: 40),
-            ElevatedButton(
-              onPressed: _isLoading || _emailSent ? null : _sendResetLink,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF3D8B40),
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: Colors.white12,
-                minimumSize: const Size(double.infinity, 52),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-              child: _isLoading
-                  ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2.5))
-                  : Text(_emailSent ? 'Email Sent ✓' : 'Send Reset Link',
-                      style: const TextStyle(
-                          fontSize: 15, fontWeight: FontWeight.w600)),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: isWide ? 480 : double.infinity),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 20),
+                const Icon(Icons.lock_reset,
+                    color: Color(0xFF4CAF50), size: 72),
+                const SizedBox(height: 24),
+                const Text('Reset your password',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600)),
+                const SizedBox(height: 12),
+                Text('A reset link will be sent to:\n${user?.email ?? ''}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        color: Colors.white54, fontSize: 14, height: 1.6)),
+                const SizedBox(height: 40),
+                ElevatedButton(
+                  onPressed: _isLoading || _emailSent ? null : _sendResetLink,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF3D8B40),
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: Colors.white12,
+                    minimumSize: const Size(double.infinity, 52),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2.5))
+                      : Text(_emailSent ? 'Email Sent ✓' : 'Send Reset Link',
+                          style: const TextStyle(
+                              fontSize: 15, fontWeight: FontWeight.w600)),
+                ),
+                if (_emailSent) ...[
+                  const SizedBox(height: 20),
+                  const Text(
+                      'Check your inbox and follow the link. Check spam if you don\'t see it.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          color: Colors.white38, fontSize: 13, height: 1.5)),
+                ],
+              ],
             ),
-            if (_emailSent) ...[
-              const SizedBox(height: 20),
-              const Text(
-                  'Check your inbox and follow the link. Check spam if you don\'t see it.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                      color: Colors.white38, fontSize: 13, height: 1.5)),
-            ],
-          ],
+          ),
         ),
       ),
     );

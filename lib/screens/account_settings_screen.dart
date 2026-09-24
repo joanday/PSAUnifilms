@@ -58,43 +58,54 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // ✅ NEW: on a wide (desktop/Chrome) window this form used to stretch
+    // edge-to-edge across the whole browser width. Now it's capped and
+    // centered, like the rest of the app's forms. On an actual phone
+    // (width <= 600) this has zero effect.
+    final isWide = MediaQuery.of(context).size.width > 600;
     return Scaffold(
-      backgroundColor: AppTheme.bgDark,
+      backgroundColor: const Color(0xFF0F1A0F),
       appBar: AppBar(
-        backgroundColor: AppTheme.bgDark,
+        backgroundColor: const Color(0xFF0F1A0F),
         foregroundColor: Colors.white,
         title: const Text('Account Settings'),
         elevation: 0,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          children: [
-            const SizedBox(height: 12),
-            _buildField('Display Name', _nameCtrl, Icons.person_outline),
-            const SizedBox(height: 16),
-            _buildReadOnly('Email', user?.email ?? '', Icons.email_outlined),
-            const SizedBox(height: 32),
-            ElevatedButton(
-              onPressed: _isLoading ? null : _saveChanges,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF3D8B40),
-                foregroundColor: Colors.white,
-                minimumSize: const Size(double.infinity, 52),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-              child: _isLoading
-                  ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2.5))
-                  : const Text('Save Changes',
-                      style:
-                          TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: isWide ? 480 : double.infinity),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              children: [
+                const SizedBox(height: 12),
+                _buildField('Display Name', _nameCtrl, Icons.person_outline),
+                const SizedBox(height: 16),
+                _buildReadOnly(
+                    'Email', user?.email ?? '', Icons.email_outlined),
+                const SizedBox(height: 32),
+                ElevatedButton(
+                  onPressed: _isLoading ? null : _saveChanges,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF3D8B40),
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(double.infinity, 52),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2.5))
+                      : const Text('Save Changes',
+                          style: TextStyle(
+                              fontSize: 15, fontWeight: FontWeight.w600)),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

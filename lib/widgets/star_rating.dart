@@ -160,19 +160,38 @@ class _StarRatingState extends State<StarRating> {
         final data = snapshot.data?.data();
         final average = (data?['rating'] as num?)?.toDouble() ?? 0.0;
         final count = (data?['ratingCount'] as num?)?.toInt() ?? 0;
+        // ✅ NEW: views, streamed live from the same films/{filmId} doc
+        // (same reasoning as the rating above -- a parent screen may be
+        // holding a stale/snapshotted Film object, so this reads the
+        // current count directly rather than trusting a value passed in).
+        final views = (data?['viewCount'] as num?)?.toInt() ?? 0;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 4,
               children: [
                 _starRow(filledCount: average.round(), size: 18),
-                const SizedBox(width: 8),
                 Text(
                   count > 0
                       ? '${average.toStringAsFixed(1)} ($count rating${count == 1 ? '' : 's'})'
                       : 'No ratings yet',
                   style: const TextStyle(color: _textMuted, fontSize: 13),
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.visibility_outlined,
+                        color: _textMuted, size: 15),
+                    const SizedBox(width: 4),
+                    Text(
+                      '$views view${views == 1 ? '' : 's'}',
+                      style: const TextStyle(color: _textMuted, fontSize: 13),
+                    ),
+                  ],
                 ),
               ],
             ),

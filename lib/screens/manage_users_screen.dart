@@ -13,30 +13,31 @@ const _textPrimary = Color(0xFFE8F5E9);
 const _textSecondary = Color(0xFF9E9E9E);
 
 // ─── Role enum ─────────────────────────────────────────────────────────────
+// ✅ SIMPLIFIED: only two roles exist now -- Admin (can upload, manage
+// users, watch) and Viewer (everyone else). The old Officer/CAS
+// Student/Moderator/Reviewer values are treated as Viewer if they ever
+// show up here (e.g. an account that hasn't logged in since the switch
+// yet -- main.dart auto-migrates those to Viewer on next login).
 
-enum UserRole { viewer, casStudent, officer }
+enum UserRole { viewer, admin }
 
 UserRole _parseRole(String? s) => switch (s) {
-      'Officer' || 'officer' => UserRole.officer,
-      'CAS Student' || 'cas_student' => UserRole.casStudent,
+      'Admin' || 'admin' => UserRole.admin,
       _ => UserRole.viewer,
     };
 
 String _roleToString(UserRole r) => switch (r) {
-      UserRole.officer => 'Officer',
-      UserRole.casStudent => 'CAS Student',
+      UserRole.admin => 'Admin',
       UserRole.viewer => 'Viewer',
     };
 
 String _roleLabel(UserRole r) => switch (r) {
-      UserRole.officer => 'Officer',
-      UserRole.casStudent => 'CAS Student',
+      UserRole.admin => 'Admin',
       UserRole.viewer => 'Viewer',
     };
 
 Color _roleColor(UserRole r) => switch (r) {
-      UserRole.officer => const Color(0xFF4CAF50),
-      UserRole.casStudent => const Color(0xFF2196F3),
+      UserRole.admin => const Color(0xFF4CAF50),
       UserRole.viewer => const Color(0xFF9E9E9E),
     };
 
@@ -87,7 +88,7 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
           }).toList());
 
   String _search = '';
-  int _filterIndex = 0; // 0 = All, 1 = Viewer, 2 = CAS Student, 3 = Officer
+  int _filterIndex = 0; // 0 = All, 1 = Viewer, 2 = Admin
 
   Future<void> _updateRole(String userId, UserRole newRole) async {
     try {
@@ -244,8 +245,7 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
         final roleFilter = [
           null,
           UserRole.viewer,
-          UserRole.casStudent,
-          UserRole.officer,
+          UserRole.admin,
         ][_filterIndex];
 
         final filtered = allUsers.where((u) {
@@ -257,77 +257,105 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
           return matchRole && matchSearch;
         }).toList();
 
+        // ✅ CHANGED: per the reference mockup, the User Management panel
+        // is just centered on the plain page background now -- no
+        // bordered/tinted "card" box around it. On an actual phone (width
+        // <= 600) this has no effect: same plain full-width layout as
+        // before.
+        final isWide = MediaQuery.of(context).size.width > 600;
+
         return Scaffold(
           backgroundColor: _bgDark,
           body: SafeArea(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 16),
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
-                  child: Text('User Management',
-                      style: TextStyle(
-                          color: _textPrimary,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700)),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: _bgCard,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                    ),
-                    child: TextField(
-                      onChanged: (v) => setState(() => _search = v),
-                      style: const TextStyle(color: _textPrimary, fontSize: 14),
-                      decoration: const InputDecoration(
-                        hintText: 'Search by name or email...',
-                        hintStyle:
-                            TextStyle(color: _textSecondary, fontSize: 14),
-                        prefixIcon: Icon(Icons.search_rounded,
-                            color: _textSecondary, size: 20),
-                        border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(vertical: 12),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
+            child: Center(
+              child: ConstrainedBox(
+                constraints:
+                    BoxConstraints(maxWidth: isWide ? 640 : double.infinity),
+                child: Container(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      for (int i = 0; i < 4; i++) ...[
-                        _FilterChip(
-                          label: ['All', 'Viewer', 'CAS Student', 'Officer'][i],
-                          selected: _filterIndex == i,
-                          onTap: () => setState(() => _filterIndex = i),
+                      const SizedBox(height: 16),
+                      // ✅ CHANGED: was left-aligned within the centered column --
+                      // now truly centered (SizedBox stretches to the column's
+                      // full width, Text centers inside that), matching the same
+                      // centered-heading treatment now used on Submit Film and
+                      // Profile & Settings.
+                      const Padding(
+                        padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: Text('User Management',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                  color: _textPrimary,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w700)),
                         ),
-                        if (i < 3) const SizedBox(width: 8),
-                      ],
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: _bgCard,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.08)),
+                          ),
+                          child: TextField(
+                            onChanged: (v) => setState(() => _search = v),
+                            style: const TextStyle(
+                                color: _textPrimary, fontSize: 14),
+                            decoration: const InputDecoration(
+                              hintText: 'Search by name or email...',
+                              hintStyle: TextStyle(
+                                  color: _textSecondary, fontSize: 14),
+                              prefixIcon: Icon(Icons.search_rounded,
+                                  color: _textSecondary, size: 20),
+                              border: InputBorder.none,
+                              contentPadding:
+                                  EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Row(
+                          children: [
+                            for (int i = 0; i < 3; i++) ...[
+                              _FilterChip(
+                                label: ['All', 'Viewer', 'Admin'][i],
+                                selected: _filterIndex == i,
+                                onTap: () => setState(() => _filterIndex = i),
+                              ),
+                              if (i < 2) const SizedBox(width: 8),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: filtered.isEmpty
+                            ? const Center(
+                                child: Text('No users found',
+                                    style: TextStyle(color: _textSecondary)))
+                            : ListView.builder(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 16),
+                                itemCount: filtered.length,
+                                itemBuilder: (_, i) => _UserTile(
+                                  user: filtered[i],
+                                  onTap: () => _openRoleSheet(filtered[i]),
+                                ),
+                              ),
+                      ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                Expanded(
-                  child: filtered.isEmpty
-                      ? const Center(
-                          child: Text('No users found',
-                              style: TextStyle(color: _textSecondary)))
-                      : ListView.builder(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          itemCount: filtered.length,
-                          itemBuilder: (_, i) => _UserTile(
-                            user: filtered[i],
-                            onTap: () => _openRoleSheet(filtered[i]),
-                          ),
-                        ),
-                ),
-              ],
+              ),
             ),
           ),
         );

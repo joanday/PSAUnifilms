@@ -37,7 +37,8 @@ class _LoginScreenState extends State<LoginScreen> {
       try {
         final List<dynamic> decoded = jsonDecode(savedData);
         setState(() {
-          _savedAccounts = decoded.map((e) => Map<String, String>.from(e)).toList();
+          _savedAccounts =
+              decoded.map((e) => Map<String, String>.from(e)).toList();
         });
       } catch (e) {
         debugPrint('Failed to decode saved accounts: $e');
@@ -49,7 +50,8 @@ class _LoginScreenState extends State<LoginScreen> {
     final prefs = await SharedPreferences.getInstance();
 
     // Check if it already exists
-    final existingIndex = _savedAccounts.indexWhere((acc) => acc['email'] == email);
+    final existingIndex =
+        _savedAccounts.indexWhere((acc) => acc['email'] == email);
     if (existingIndex != -1) {
       _savedAccounts[existingIndex]['password'] = password;
     } else {
@@ -129,7 +131,8 @@ class _LoginScreenState extends State<LoginScreen> {
         password: _passwordCtrl.text.trim(),
       );
 
-      await _saveAccountLocally(_emailCtrl.text.trim(), _passwordCtrl.text.trim());
+      await _saveAccountLocally(
+          _emailCtrl.text.trim(), _passwordCtrl.text.trim());
       await _saveLoginLog(credential.user!);
 
       if (!mounted) return;
@@ -146,11 +149,39 @@ class _LoginScreenState extends State<LoginScreen> {
       // so Log Out later would silently do nothing.
       await _getUserRole(credential.user!);
     } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message ?? e.code)),
+        SnackBar(content: Text(_friendlyLoginError(e))),
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // ✅ CHANGED: this used to just show Firebase's own raw error message
+  // (e.g. "The supplied auth credential is incorrect, malformed or has
+  // expired.", or even "There is no user record corresponding to this
+  // identifier."). Those raw messages are too specific for a login
+  // screen -- they tell an attacker exactly WHY a login attempt failed
+  // (no such account vs. wrong password vs. malformed token), which lets
+  // someone try random emails and learn which ones are actually
+  // registered, one at a time. A generic message that treats every
+  // credential-related failure the same way is standard practice for
+  // login forms. Non-credential problems (bad email format, disabled
+  // account, rate limiting, no internet) are still shown clearly since
+  // those don't leak anything about other people's accounts.
+  String _friendlyLoginError(FirebaseAuthException e) {
+    switch (e.code) {
+      case 'invalid-email':
+        return 'Please enter a valid email address.';
+      case 'user-disabled':
+        return 'This account has been disabled. Please contact the admin.';
+      case 'too-many-requests':
+        return 'Too many attempts. Please wait a moment and try again.';
+      case 'network-request-failed':
+        return 'No internet connection. Please check your network and try again.';
+      default:
+        return 'Incorrect email or password. Please try again.';
     }
   }
 
@@ -161,15 +192,29 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       return;
     }
+    const resetMessage =
+        'If that email is registered, a password reset link has been sent.';
     try {
       await _auth.sendPasswordResetEmail(email: _emailCtrl.text.trim());
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Password reset email sent')),
+        const SnackBar(content: Text(resetMessage)),
       );
     } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      if (e.code == 'invalid-email') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please enter a valid email address.')),
+        );
+        return;
+      }
+      // ✅ CHANGED: previously showed Firebase's raw message here too,
+      // which for 'user-not-found' directly confirms an email is NOT
+      // registered. Showing the exact same success-looking message
+      // whether or not the account exists means "Forgot password" can no
+      // longer be used to check who has an account on the app.
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message ?? e.code)),
+        const SnackBar(content: Text(resetMessage)),
       );
     }
   }
@@ -183,249 +228,271 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // ✅ CHANGED: the whole form used CrossAxisAlignment.stretch, so on a
+    // phone every field/button naturally maxed out at the phone's own
+    // (narrow) width -- looked fine. But now that the app fills the whole
+    // browser window on desktop, "stretch" meant stretching all the way
+    // to the edges of a 1500px+ window, which looked exactly like your
+    // sketch: giant fields spanning almost the whole screen. Nothing about
+    // the fields/buttons/text themselves changed -- same labels, same
+    // icons, same everything -- this just wraps the same column in a
+    // centered box that caps its width at 420px on a wide/desktop screen,
+    // so it reads like a normal centered login card instead. On an actual
+    // phone (width <= 600) this has no effect at all.
+    final isWide = MediaQuery.of(context).size.width > 600;
     return Scaffold(
-      backgroundColor: const Color(0xFF0D1B13),
+      backgroundColor: const Color(0xFF0F1A0F),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 36),
+          child: Center(
+            child: ConstrainedBox(
+              constraints:
+                  BoxConstraints(maxWidth: isWide ? 420 : double.infinity),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 36),
 
-              // ── Logo ──────────────────────────────────────────────────────
-              Center(
-                child: ClipOval(
-                  child: Image.asset(
-                    'assets/images/psaulogo.png',
-                    width: 110,
-                    height: 110,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 24),
-
-              // ── Title ─────────────────────────────────────────────────────
-              const Text(
-                'Welcome to',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w400,
-                  letterSpacing: 0.4,
-                ),
-              ),
-              const SizedBox(height: 4),
-              RichText(
-                textAlign: TextAlign.center,
-                text: const TextSpan(
-                  children: [
-                    TextSpan(
-                      text: 'PSAUni',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 26,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.5,
+                  // ── Logo ──────────────────────────────────────────────────────
+                  Center(
+                    child: ClipOval(
+                      child: Image.asset(
+                        'assets/images/psaulogo.png',
+                        width: 110,
+                        height: 110,
+                        fit: BoxFit.cover,
                       ),
                     ),
-                    TextSpan(
-                      text: 'Films',
-                      style: TextStyle(
-                        color: Color(0xFF4CAF50),
-                        fontSize: 26,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.5,
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // ── Title ─────────────────────────────────────────────────────
+                  const Text(
+                    'Welcome to',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w400,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  RichText(
+                    textAlign: TextAlign.center,
+                    text: const TextSpan(
+                      children: [
+                        TextSpan(
+                          text: 'PSAUni',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 26,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        TextSpan(
+                          text: 'Films',
+                          style: TextStyle(
+                            color: Color(0xFF4CAF50),
+                            fontSize: 26,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  // ── Subtitle ──────────────────────────────────────────────────
+                  const Text(
+                    'Log in to continue watching inspiring\nstories and student documentaries.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white38,
+                      fontSize: 13,
+                      height: 1.5,
+                    ),
+                  ),
+
+                  const SizedBox(height: 36),
+
+                  // ── Email field ───────────────────────────────────────────────
+                  _buildTextField(
+                    controller: _emailCtrl,
+                    hint: 'Email',
+                    prefixIcon: Icons.email_outlined,
+                    keyboardType: TextInputType.emailAddress,
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  // ── Password field ────────────────────────────────────────────
+                  _buildTextField(
+                    controller: _passwordCtrl,
+                    hint: 'Password',
+                    prefixIcon: Icons.lock_outline,
+                    obscureText: _obscurePass,
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscurePass
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                        color: Colors.white38,
+                        size: 20,
+                      ),
+                      onPressed: () =>
+                          setState(() => _obscurePass = !_obscurePass),
+                    ),
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  // ── Forgot password ───────────────────────────────────────────
+                  Align(
+                    alignment: Alignment.center,
+                    child: GestureDetector(
+                      onTap: _onForgotPassword,
+                      child: const Text(
+                        'Forgot password?',
+                        style: TextStyle(
+                          color: Colors.white54,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 28),
+
+                  // ── Log In button ─────────────────────────────────────────────
+                  ElevatedButton(
+                    onPressed: _isLoading ? null : _onLogin,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF3D8B40),
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(double.infinity, 52),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2.5,
+                            ),
+                          )
+                        : const Text(
+                            'Log In',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // ── Sign up link ──────────────────────────────────────────────
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text(
+                        "Don't have an account? ",
+                        style: TextStyle(color: Colors.white38, fontSize: 13),
+                      ),
+                      GestureDetector(
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const SignUpScreen()),
+                        ),
+                        child: const Text(
+                          'Sign up',
+                          style: TextStyle(
+                            color: Color(0xFF4CAF50),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  if (_savedAccounts.isNotEmpty) ...[
+                    const SizedBox(height: 48),
+                    const Center(
+                      child: Text(
+                        'Recent Accounts',
+                        style: TextStyle(
+                          color: Colors.white54,
+                          fontSize: 12,
+                          letterSpacing: 0.5,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      height: 60,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _savedAccounts.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 12),
+                        itemBuilder: (context, index) {
+                          final acc = _savedAccounts[index];
+                          return GestureDetector(
+                            onTap: () {
+                              _emailCtrl.text = acc['email'] ?? '';
+                              _passwordCtrl.text = acc['password'] ?? '';
+                              _onLogin();
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF162820),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.white12),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const CircleAvatar(
+                                    radius: 14,
+                                    backgroundColor: Color(0xFF3D8B40),
+                                    child: Icon(Icons.person,
+                                        size: 16, color: Colors.white),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    acc['email'] ?? '',
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ],
-                ),
-              ),
-
-              const SizedBox(height: 10),
-
-              // ── Subtitle ──────────────────────────────────────────────────
-              const Text(
-                'Log in to continue watching inspiring\nstories and student documentaries.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white38,
-                  fontSize: 13,
-                  height: 1.5,
-                ),
-              ),
-
-              const SizedBox(height: 36),
-
-              // ── Email field ───────────────────────────────────────────────
-              _buildTextField(
-                controller: _emailCtrl,
-                hint: 'Email',
-                prefixIcon: Icons.email_outlined,
-                keyboardType: TextInputType.emailAddress,
-              ),
-
-              const SizedBox(height: 14),
-
-              // ── Password field ────────────────────────────────────────────
-              _buildTextField(
-                controller: _passwordCtrl,
-                hint: 'Password',
-                prefixIcon: Icons.lock_outline,
-                obscureText: _obscurePass,
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _obscurePass
-                        ? Icons.visibility_outlined
-                        : Icons.visibility_off_outlined,
-                    color: Colors.white38,
-                    size: 20,
-                  ),
-                  onPressed: () => setState(() => _obscurePass = !_obscurePass),
-                ),
-              ),
-
-              const SizedBox(height: 14),
-
-              // ── Forgot password ───────────────────────────────────────────
-              Align(
-                alignment: Alignment.center,
-                child: GestureDetector(
-                  onTap: _onForgotPassword,
-                  child: const Text(
-                    'Forgot password?',
-                    style: TextStyle(
-                      color: Colors.white54,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 28),
-
-              // ── Log In button ─────────────────────────────────────────────
-              ElevatedButton(
-                onPressed: _isLoading ? null : _onLogin,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF3D8B40),
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(double.infinity, 52),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  elevation: 0,
-                ),
-                child: _isLoading
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2.5,
-                        ),
-                      )
-                    : const Text(
-                        'Log In',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-              ),
-
-              const SizedBox(height: 24),
-
-              // ── Sign up link ──────────────────────────────────────────────
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text(
-                    "Don't have an account? ",
-                    style: TextStyle(color: Colors.white38, fontSize: 13),
-                  ),
-                  GestureDetector(
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const SignUpScreen()),
-                    ),
-                    child: const Text(
-                      'Sign up',
-                      style: TextStyle(
-                        color: Color(0xFF4CAF50),
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
                 ],
               ),
-
-              if (_savedAccounts.isNotEmpty) ...[
-                const SizedBox(height: 48),
-                const Center(
-                  child: Text(
-                    'Recent Accounts',
-                    style: TextStyle(
-                      color: Colors.white54,
-                      fontSize: 12,
-                      letterSpacing: 0.5,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  height: 60,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _savedAccounts.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 12),
-                    itemBuilder: (context, index) {
-                      final acc = _savedAccounts[index];
-                      return GestureDetector(
-                        onTap: () {
-                          _emailCtrl.text = acc['email'] ?? '';
-                          _passwordCtrl.text = acc['password'] ?? '';
-                          _onLogin();
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF162820),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.white12),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const CircleAvatar(
-                                radius: 14,
-                                backgroundColor: Color(0xFF3D8B40),
-                                child: Icon(Icons.person, size: 16, color: Colors.white),
-                              ),
-                              const SizedBox(width: 10),
-                              Text(
-                                acc['email'] ?? '',
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ],
+            ),
           ),
         ),
       ),

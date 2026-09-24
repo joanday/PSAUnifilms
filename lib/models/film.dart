@@ -6,8 +6,10 @@ class Film {
   final String director;
   final int year;
   final String genre;
+  final List<String> genres;
   final double rating;
   final int ratingCount;
+  final int viewCount;
   final String thumbnailUrl;
   final String description;
   final String videoUrl;
@@ -18,11 +20,10 @@ class Film {
   final String aiSummary;
   final List<String> aiKeywords;
   final bool isOldDocumentary;
-  final String
-      visualDescription; // Gemini Vision analysis of actual video content
+  final String visualDescription;
   final List<String> cbvrKeywords;
-  final String cbvrSummary; // The real summary from Gemini Video API
-  final String cbvrStatus; // e.g. processing, completed, failed
+  final String cbvrSummary;
+  final String cbvrStatus;
 
   const Film({
     required this.id,
@@ -30,8 +31,10 @@ class Film {
     this.director = '',
     required this.year,
     required this.genre,
+    this.genres = const [],
     required this.rating,
     this.ratingCount = 0,
+    this.viewCount = 0,
     required this.thumbnailUrl,
     required this.description,
     required this.videoUrl,
@@ -63,6 +66,11 @@ class Film {
       }
     }
 
+    final String primaryGenre = data['genre'] ?? 'Documentary';
+    final List<String> parsedGenres = data['genres'] != null
+        ? List<String>.from(data['genres'])
+        : [primaryGenre];
+
     return Film(
       id: doc.id,
       title: data['title'] ?? '',
@@ -72,11 +80,14 @@ class Film {
               ? data['year']
               : int.tryParse('${data['year']}') ?? 2024)
           : 2024,
-      genre: data['genre'] ?? 'Documentary',
+      genre: primaryGenre,
+      genres: parsedGenres,
       rating: data['rating'] != null ? (data['rating'] as num).toDouble() : 0.0,
       ratingCount: data['ratingCount'] != null
           ? (data['ratingCount'] as num).toInt()
           : 0,
+      viewCount:
+          data['viewCount'] != null ? (data['viewCount'] as num).toInt() : 0,
       thumbnailUrl: data['thumbnail'] ?? data['thumbnailUrl'] ?? '',
       description: data['description'] ?? '',
       videoUrl: data['videoUrl'] ?? '',
